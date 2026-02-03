@@ -1,0 +1,462 @@
+import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
+
+export interface Skill {
+    id: string;
+    name: string;
+    description: string;
+    content: string;
+    projectPath: string;
+    absolutePath?: string; // 全局技能的绝对路径
+    createdAt: string;
+    updatedAt: string;
+    version: number;
+    globalVersion?: number;
+    syncStatus: 'synced' | 'modified' | 'outdated' | 'new';
+    isGlobal?: boolean; // 标记是否为全局技能
+}
+
+export interface ImportResult {
+    success: boolean;
+    error?: string;
+}
+
+export class SkillManager {
+    private skillsPath: string;
+    private globalSkillsPath: string;
+    private skills: Map<string, Skill> = new Map();
+
+    constructor(private context: vscode.ExtensionContext) {
+        this.skillsPath = path.join(context.globalStorageUri.fsPath, 'skills');
+        this.globalSkillsPath = path.join(context.globalStorageUri.fsPath, 'global-skills');
+        this.ensureDirectoriesExist();
+        this.loadSkills();
+    }
+
+    private ensureDirectoriesExist() {
+        if (!fs.existsSync(this.skillsPath)) {
+            fs.mkdirSync(this.skillsPath, { recursive: true });
+        }
+        if (!fs.existsSync(this.globalSkillsPath)) {
+            fs.mkdirSync(this.globalSkillsPath, { recursive: true });
+        }
+    }
+
+    private loadSkills() {
+        // 加载本地技能
+        if (!fs.existsSync(this.skillsPath)) {
+            return;
+        }
+
+        const files = fs.readdirSync(this.skillsPath);
+        files.forEach(file => {
+            if (file.endsWith('.json')) {
+                const filePath = path.join(this.skillsPath, file);
+                try {
+                    const content = fs.readFileSync(filePath, 'utf-8');
+                    const skill: Skill = JSON.parse(content);
+                    skill.isGlobal = false; // 本地技能
+                    this.skills.set(skill.id, skill);
+                } catch (error) {
+                    console.error(`Error loading skill from ${filePath}:`, error);
+                }
+            }
+        });
+
+        // 加载全局技能
+        this.loadGlobalSkills();
+    }
+
+    private loadGlobalSkills() {
+        const config = vscode.workspace.getConfiguration('iflow');
+        const globalSkillsDir = config.get<string>('globalSkillsPath') || path.join(process.env.HOME || '', '.iflow', 'skills');
+
+        if (!fs.existsSync(globalSkillsDir)) {
+            return;
+        }
+
+        const files = fs.readdirSync(globalSkillsDir);
+        files.forEach(file => {
+            if (file.endsWith('.md')) {
+                const filePath = path.join(globalSkillsDir, file);
+                try {
+                    const content = fs.readFileSync(filePath, 'utf-8');
+                    const skillName = file.replace('.md', '');
+                    const version = this.extractVersionFromContent(content);
+                    const stats = fs.statSync(filePath);
+
+                    const skill: Skill = {
+                        id: `global-${this.hashString(filePath)}`, // 使用文件路径的哈希作为唯一ID
+                        name: skillName,
+                        description: this.extractDescription(content) || 'Global skill',
+                        content: content,
+                        projectPath: globalSkillsDir,
+                        absolutePath: filePath, // 保存绝对路径
+                        createdAt: stats.birthtime.toISOString(),
+                        updatedAt: stats.mtime.toISOString(),
+                        version: version || 1,
+                        syncStatus: 'synced',
+                        globalVersion: version || 1,
+                        isGlobal: true // 标记为全局技能
+                    };
+
+                    this.skills.set(skill.id, skill);
+                } catch (error) {
+                    console.error(`Error loading global skill from ${filePath}:`, error);
+                }
+            }
+        });
+    }
+
+    reloadSkills(): void {
+        // 清空当前技能列表并重新加载
+        this.skills.clear();
+        this.loadSkills();
+    }
+
+    // 增量刷新方法：不清空列表，只添加新的技能
+    incrementalRefresh(): void {
+        // 加载本地技能（只添加不存在的）
+        if (fs.existsSync(this.skillsPath)) {
+            const files = fs.readdirSync(this.skillsPath);
+            files.forEach(file => {
+                if (file.endsWith('.json')) {
+                    const filePath = path.join(this.skillsPath, file);
+                    try {
+                        const content = fs.readFileSync(filePath, 'utf-8');
+                        const skill: Skill = JSON.parse(content);
+                        skill.isGlobal = false; // 本地技能
+                        // 只有当技能不存在时才添加
+                        if (!this.skills.has(skill.id)) {
+                            this.skills.set(skill.id, skill);
+                        }
+                    } catch (error) {
+                        console.error(`Error loading skill from ${filePath}:`, error);
+                    }
+                }
+            });
+        }
+
+        // 加载全局技能（只添加不存在的）
+        const config = vscode.workspace.getConfiguration('iflow');
+        const globalSkillsDir = config.get<string>('globalSkillsPath') || path.join(process.env.HOME || '', '.iflow', 'skills');
+
+        if (fs.existsSync(globalSkillsDir)) {
+            const files = fs.readdirSync(globalSkillsDir);
+            files.forEach(file => {
+                if (file.endsWith('.md')) {
+                    const filePath = path.join(globalSkillsDir, file);
+                    try {
+                        const content = fs.readFileSync(filePath, 'utf-8');
+                        const skillName = file.replace('.md', '');
+                        const version = this.extractVersionFromContent(content);
+                        const stats = fs.statSync(filePath);
+
+                        const skillId = `global-${this.hashString(filePath)}`;
+                        // 只有当技能不存在时才添加
+                        if (!this.skills.has(skillId)) {
+                            const skill: Skill = {
+                                id: skillId,
+                                name: skillName,
+                                description: this.extractDescription(content) || 'Global skill',
+                                content: content,
+                                projectPath: globalSkillsDir,
+                                absolutePath: filePath,
+                                createdAt: stats.birthtime.toISOString(),
+                                updatedAt: stats.mtime.toISOString(),
+                                version: version || 1,
+                                syncStatus: 'synced',
+                                globalVersion: version || 1,
+                                isGlobal: true
+                            };
+                            this.skills.set(skillId, skill);
+                        }
+                    } catch (error) {
+                        console.error(`Error loading global skill from ${filePath}:`, error);
+                    }
+                }
+            });
+        }
+    }
+
+    private extractDescription(content: string): string | null {
+        // 尝试从 markdown 内容中提取描述
+        const descMatch = content.match(/##\s*Description\s*\n([\s\S]*?)(?=\n##|$)/i);
+        if (descMatch && descMatch[1]) {
+            return descMatch[1].trim();
+        }
+        return null;
+    }
+
+    async createSkill(name: string, description: string, projectPath: string): Promise<void> {
+        const id = this.generateId(name, projectPath);
+        const skill: Skill = {
+            id,
+            name,
+            description,
+            content: await this.generateSkillContentUsingSkillCreator(name, description, projectPath),
+            projectPath,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            version: 1,
+            syncStatus: 'new'
+        };
+
+        this.skills.set(id, skill);
+        await this.saveSkillToFile(skill);
+    }
+
+    private generateId(name: string, projectPath: string): string {
+        // 使用项目路径的哈希值来确保唯一性，即使文件夹名称相同但路径不同
+        const pathHash = this.hashString(projectPath);
+        const sanitizedName = name.toLowerCase().replace(/\s+/g, '-');
+        return `${sanitizedName}-${pathHash}-${Date.now()}`;
+    }
+
+    private hashString(str: string): string {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // Convert to 32bit integer
+        }
+        return Math.abs(hash).toString(16);
+    }
+
+    private async generateSkillContentUsingSkillCreator(name: string, description: string, projectPath: string): Promise<string> {
+        const projectName = path.basename(projectPath);
+        
+        // 使用 skill-creator 技能生成内容
+        const skillCreatorPrompt = `Create a comprehensive skill definition for "${name}" with the following details:
+
+Description: ${description}
+Project Name: ${projectName}
+Project Path: ${projectPath}
+
+Generate a complete skill markdown file that includes:
+1. A clear title and description
+2. When to use this skill
+3. Key capabilities and features
+4. Any specific tools or workflows it should handle
+5. Example use cases
+6. Any constraints or limitations
+
+Format the output as a markdown file ready to be used as an iFlow skill.`;
+
+        try {
+            // 调用 iFlow CLI 的 skill-creator 技能
+            const { exec } = require('child_process');
+            return new Promise((resolve, reject) => {
+                exec(`iflow --skill skill-creator --prompt "${skillCreatorPrompt.replace(/"/g, '\\"')}"`, (error: any, stdout: string, stderr: string) => {
+                    if (error) {
+                        console.error('Error calling skill-creator:', error);
+                        // 如果 skill-creator 调用失败，回退到默认模板
+                        resolve(this.generateDefaultTemplate(name, description, projectPath));
+                    } else if (stdout) {
+                        resolve(stdout.trim());
+                    } else {
+                        resolve(this.generateDefaultTemplate(name, description, projectPath));
+                    }
+                });
+            });
+        } catch (error) {
+            console.error('Failed to use skill-creator:', error);
+            return this.generateDefaultTemplate(name, description, projectPath);
+        }
+    }
+
+    private generateDefaultTemplate(name: string, description: string, projectPath: string): string {
+        const projectName = path.basename(projectPath);
+        return `# ${name}
+
+## Description
+${description}
+
+## Project
+- **Project Name**: ${projectName}
+- **Project Path**: \`${projectPath}\`
+
+## Usage
+This skill provides specialized knowledge and workflows for the ${projectName} project.
+
+## Key Features
+<!-- Add your key features here -->
+
+## Getting Started
+<!-- Add getting started instructions here -->
+
+## Documentation
+<!-- Add detailed documentation here using Markdown formatting -->
+`;
+    }
+
+    async updateSkill(skill: Skill): Promise<void> {
+        skill.updatedAt = new Date().toISOString();
+        skill.version += 1;
+        skill.syncStatus = 'modified';
+        this.skills.set(skill.id, skill);
+        await this.saveSkillToFile(skill);
+    }
+
+    private async saveSkillToFile(skill: Skill): Promise<void> {
+        const filePath = path.join(this.skillsPath, `${skill.id}.json`);
+        await fs.promises.writeFile(filePath, JSON.stringify(skill, null, 2), 'utf-8');
+    }
+
+    public async saveSkillToFilePublic(skill: Skill): Promise<void> {
+        await this.saveSkillToFile(skill);
+    }
+
+    getSkill(id: string): Skill | undefined {
+        return this.skills.get(id);
+    }
+
+    getAllSkills(): Skill[] {
+        // 返回所有技能，包括本地和全局的
+        return Array.from(this.skills.values());
+    }
+
+    getLocalSkills(): Skill[] {
+        // 只返回本地技能
+        return Array.from(this.skills.values()).filter(skill => !skill.isGlobal);
+    }
+
+    getGlobalSkills(): Skill[] {
+        // 只返回全局技能
+        return Array.from(this.skills.values()).filter(skill => skill.isGlobal);
+    }
+
+    async deleteSkill(id: string): Promise<void> {
+        const filePath = path.join(this.skillsPath, `${id}.json`);
+        if (fs.existsSync(filePath)) {
+            await fs.promises.unlink(filePath);
+        }
+        this.skills.delete(id);
+    }
+
+    async deleteSkillFromGlobal(id: string): Promise<void> {
+        const skill = this.skills.get(id);
+        if (skill && skill.isGlobal && skill.absolutePath) {
+            // 删除全局技能文件
+            if (fs.existsSync(skill.absolutePath)) {
+                await fs.promises.unlink(skill.absolutePath);
+            }
+        }
+        this.skills.delete(id);
+    }
+
+    async removeSkillFromList(id: string): Promise<void> {
+        // 仅从内存中移除，不删除文件
+        this.skills.delete(id);
+    }
+
+    async importSkillToGlobal(skillId: string): Promise<ImportResult> {
+        const skill = this.skills.get(skillId);
+        if (!skill) {
+            return { success: false, error: 'Skill not found' };
+        }
+
+        try {
+            // Get global iflow skills directory path
+            const config = vscode.workspace.getConfiguration('iflow');
+            const globalSkillsDir = config.get<string>('globalSkillsPath') || path.join(process.env.HOME || '', '.iflow', 'skills');
+
+            if (!fs.existsSync(globalSkillsDir)) {
+                fs.mkdirSync(globalSkillsDir, { recursive: true });
+            }
+
+            const skillFileName = `${skill.name}.md`;
+            const skillFilePath = path.join(globalSkillsDir, skillFileName);
+
+            // Write skill content as markdown file with version marker
+            const contentWithVersion = this.addVersionToContent(skill.content, skill.version);
+            await fs.promises.writeFile(skillFilePath, contentWithVersion, 'utf-8');
+
+            // Update sync status
+            skill.globalVersion = skill.version;
+            skill.syncStatus = 'synced';
+            await this.saveSkillToFile(skill);
+
+            return { success: true };
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return { success: false, error: errorMessage };
+        }
+    }
+
+    async checkGlobalSkillSyncStatus(skillId: string): Promise<void> {
+        const skill = this.skills.get(skillId);
+        if (!skill) {
+            return;
+        }
+
+        const globalSkillInfo = await this.readGlobalSkill(skill.name);
+        
+        if (!globalSkillInfo.exists) {
+            // 全局skill不存在
+            skill.syncStatus = skill.globalVersion ? 'outdated' : 'new';
+        } else {
+            // 检查全局skill的版本
+            const globalContent = globalSkillInfo.content || '';
+            const globalVersion = this.extractVersionFromContent(globalContent);
+            
+            if (skill.globalVersion === undefined) {
+                // 从未同步过
+                skill.syncStatus = 'new';
+            } else if (globalVersion > skill.globalVersion) {
+                // 全局skill有更新
+                skill.syncStatus = 'outdated';
+            } else if (skill.version > skill.globalVersion) {
+                // 本地有修改
+                skill.syncStatus = 'modified';
+            } else {
+                // 已同步
+                skill.syncStatus = 'synced';
+            }
+        }
+        
+        await this.saveSkillToFile(skill);
+    }
+
+    async readGlobalSkill(skillName: string): Promise<{ exists: boolean; content?: string; version?: number }> {
+        const config = vscode.workspace.getConfiguration('iflow');
+        const globalSkillsDir = config.get<string>('globalSkillsPath') || path.join(process.env.HOME || '', '.iflow', 'skills');
+        const skillFilePath = path.join(globalSkillsDir, `${skillName}.md`);
+
+        if (!fs.existsSync(skillFilePath)) {
+            return { exists: false };
+        }
+
+        try {
+            const content = await fs.promises.readFile(skillFilePath, 'utf-8');
+            const version = this.extractVersionFromContent(content);
+            return { exists: true, content, version };
+        } catch (error) {
+            return { exists: false };
+        }
+    }
+
+    private extractVersionFromContent(content: string): number {
+        const versionMatch = content.match(/<!--\s*VERSION:\s*(\d+)\s*-->/);
+        if (versionMatch && versionMatch[1]) {
+            return parseInt(versionMatch[1], 10);
+        }
+        return 0;
+    }
+
+    private addVersionToContent(content: string, version: number): string {
+        // 移除现有的版本标记
+        let cleanedContent = content.replace(/<!--\s*VERSION:\s*\d+\s*-->\s*\n?/g, '');
+        
+        // 在内容开头添加版本标记
+        const versionMarker = `<!-- VERSION: ${version} -->\n\n`;
+        return versionMarker + cleanedContent;
+    }
+
+    getSkillsForProject(projectPath: string): Skill[] {
+        return this.getAllSkills().filter(skill => 
+            skill.projectPath === projectPath
+        );
+    }
+}
