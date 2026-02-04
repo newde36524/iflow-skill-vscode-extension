@@ -29,17 +29,20 @@ export class SkillWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   showSkillEditor(skill: Skill) {
+    console.log("showSkillEditor called - skill.name:", skill.name);
+    console.log("showSkillEditor called - skill.absolutePath:", skill.absolutePath);
+    console.log("showSkillEditor called - skill.projectPath:", skill.projectPath);
+    
     // 只在没有 absolutePath 时才设置（优先保留原有的 absolutePath）
     if (!skill.absolutePath) {
-      const path = require("path");
       skill.absolutePath = path.join(
         skill.projectPath,
         ".iflow",
         "skills",
         `${skill.name}.md`,
       );
+      console.log("showSkillEditor - generated absolutePath:", skill.absolutePath);
     }
-    console.log("showSkillEditor - absolutePath:", skill.absolutePath);
     this.currentSkill = skill;
     this.showSkillEditorPanel(skill);
   }
@@ -67,27 +70,42 @@ export class SkillWebviewProvider implements vscode.WebviewViewProvider {
   }
 
   public showSkillEditorPanel(skill: Skill) {
+    console.log("showSkillEditorPanel called - skill.name:", skill.name);
+    console.log("showSkillEditorPanel called - skill.absolutePath:", skill.absolutePath);
+    
     // 确保设置了 absolutePath
     if (!skill.absolutePath) {
-      const path = require("path");
       skill.absolutePath = path.join(
         skill.projectPath,
         ".iflow",
         "skills",
         `${skill.name}.md`,
       );
+      console.log("showSkillEditorPanel - generated absolutePath:", skill.absolutePath);
     }
-    console.log("showSkillEditorPanel - absolutePath:", skill.absolutePath);
+    
     this.currentSkill = skill;
 
+    // Mac 上可能存在 panel dispose 后立即创建的问题，先检查是否可以复用
     if (this.currentPanel) {
+      console.log("Disposing existing panel before creating new one");
       this.currentPanel.dispose();
+      this.currentPanel = undefined;
+      // 给 Mac 系统一点时间清理
+      setTimeout(() => {
+        this.createNewPanel(skill);
+      }, 100);
+    } else {
+      this.createNewPanel(skill);
     }
+  }
 
+  private createNewPanel(skill: Skill) {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
       : undefined;
 
+    console.log("Creating new webview panel for skill:", skill.name);
     this.currentPanel = vscode.window.createWebviewPanel(
       "iflowSkillEditor",
       `Edit Skill: ${skill.name}`,
@@ -99,13 +117,20 @@ export class SkillWebviewProvider implements vscode.WebviewViewProvider {
       },
     );
 
-    this.currentPanel.webview.html = this.getWebviewContent(
+    console.log("Webview panel created successfully");
+    const webviewContent = this.getWebviewContent(
       skill,
       this.currentPanel.webview,
     );
+    this.currentPanel.webview.html = webviewContent;
+    console.log("Webview HTML content set, length:", webviewContent.length);
+
+    // 使用 reveal 确保 panel 在 Mac 上正确显示
+    this.currentPanel.reveal(column || vscode.ViewColumn.One);
 
     this.currentPanel.onDidChangeViewState(
       (e) => {
+        console.log("Webview view state changed, visible:", e.webviewPanel.visible);
         if (e.webviewPanel.visible && this.currentSkill) {
           this.currentPanel!.webview.html = this.getWebviewContent(
             this.currentSkill,
@@ -119,6 +144,7 @@ export class SkillWebviewProvider implements vscode.WebviewViewProvider {
 
     this.currentPanel.onDidDispose(
       () => {
+        console.log("Webview panel disposed");
         this.currentPanel = undefined;
       },
       undefined,
@@ -127,12 +153,21 @@ export class SkillWebviewProvider implements vscode.WebviewViewProvider {
 
     this.currentPanel.webview.onDidReceiveMessage(
       async (message) => {
+        console.log("Received message from webview:", message.command);
         switch (message.command) {
           case "save":
             await this.handleSave(message.content);
             break;
           case "preview":
             this.handlePreview(message.content);
+            break;
+          case "renderMarkdown":
+            // 使用本地的 markdown-it 渲染 markdown
+            const renderedContent = this.md.render(message.content);
+            this.currentPanel?.webview.postMessage({
+              command: 'updatePreview',
+              content: renderedContent
+            });
             break;
         }
       },
@@ -554,7 +589,6 @@ export class SkillWebviewProvider implements vscode.WebviewViewProvider {
             width: 100%;
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.2/dist/markdown-it.min.js"></script>
 </head>
 <body>
     <div class="header">
@@ -658,16 +692,13 @@ export class SkillWebviewProvider implements vscode.WebviewViewProvider {
             }
         });
         
-        // Update preview on input
+        // Update preview on input - 通过 postMessage 请求渲染
         editor.addEventListener('input', () => {
-            // 实时更新预览
-            const md = window.markdownit({
-                html: true,
-                linkify: true,
-                typographer: true
+            // 请求扩展端渲染 markdown
+            vscode.postMessage({
+                command: 'renderMarkdown',
+                content: editor.value
             });
-            const renderedContent = md.render(editor.value);
-            preview.innerHTML = renderedContent;
             
             // 检测内容是否被修改
             if (editor.value !== initialContent && !isModified) {
