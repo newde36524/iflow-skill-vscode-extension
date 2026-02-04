@@ -151,25 +151,46 @@ export async function activate(context: vscode.ExtensionContext) {
         .status-new { background-color: rgba(86, 156, 214, 0.2); color: #569cd6; }
         .content-preview {
             background-color: var(--vscode-textCodeBlock-background);
-            padding: 15px;
+            padding: 20px;
             border-radius: 4px;
-            margin: 10px 0;
-            max-height: 50vh;
-            min-height: 200px;
+            margin: 20px 0;
+            max-height: 70vh;
             overflow-y: auto;
             overflow-x: auto;
             white-space: pre-wrap;
             word-break: break-word;
             font-family: var(--vscode-editor-font-family);
             font-size: 13px;
-            line-height: 1.5;
+            line-height: 1.6;
+            border: 1px solid var(--vscode-panel-border);
         }
-        .info-box {
-            background-color: var(--vscode-editor-selectionBackground);
-            padding: 10px 15px;
+        .content-preview h1, .content-preview h2, .content-preview h3 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: var(--vscode-textLink-foreground);
+        }
+        .content-preview h1 {
+            font-size: 24px;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            padding-bottom: 10px;
+        }
+        .content-preview h2 {
+            font-size: 20px;
+        }
+        .content-preview h3 {
+            font-size: 16px;
+        }
+        .content-preview code {
+            background-color: rgba(255,255,255,0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .content-preview pre {
+            background-color: var(--vscode-editor-background);
+            padding: 15px;
             border-radius: 4px;
+            overflow-x: auto;
             margin: 10px 0;
-            border-left: 3px solid var(--vscode-textLink-foreground);
         }
     </style>
 </head>
@@ -177,66 +198,17 @@ export async function activate(context: vscode.ExtensionContext) {
     <h1>${skill.name}</h1>
     
     <div class="button-container">
-        <button class="btn-success" id="saveToGlobalBtn">保存到全局</button>
+        <button class="btn-secondary" id="editBtn">编辑</button>
     </div>
     
-    <h2>基本信息</h2>    <div class="detail-row">
-        <span class="detail-label">描述:</span>
-        <span class="detail-value">${skill.description || "无"}</span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">类型:</span>
-        <span class="detail-value">${skill.isGlobal ? '<span class="status-badge status-synced">全局技能</span>' : "本地技能"}</span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">项目路径:</span>
-        <span class="detail-value"><code>${skill.projectPath}</code></span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">绝对路径:</span>
-        <span class="detail-value"><code>${skill.absolutePath || (skill.projectPath + "/" + skill.name + ".md")}</code></span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">版本:</span>
-        <span class="detail-value">v${skill.version}</span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">全局版本:</span>
-        <span class="detail-value">${skill.globalVersion ? "v" + skill.globalVersion : "未同步"}</span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">同步状态:</span>
-        <span class="detail-value">
-            <span class="status-badge status-${skill.syncStatus}">${statusLabels[skill.syncStatus] || skill.syncStatus}</span>
-        </span>
-    </div>
-    
-    <h2>时间信息</h2>
-    <div class="detail-row">
-        <span class="detail-label">创建时间:</span>
-        <span class="detail-value">${new Date(skill.createdAt).toLocaleString("zh-CN")}</span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">最后更新:</span>
-        <span class="detail-value">${new Date(skill.updatedAt).toLocaleString("zh-CN")}</span>
-    </div>
-    
-    <h2>技能内容预览</h2>
-    <div class="content-preview">${skill.content.substring(0, 1000)}${skill.content.length > 1000 ? "..." : ""}</div>
-    
-    <h2>完整文档</h2>
-    <div class="full-document">${skill.content}</div>
-    
-    <div class="info-box">
-        <strong>提示:</strong> 要编辑此技能，请右键选择"编辑"操作。
-    </div>
+    <div class="content-preview">${skill.content}</div>
     
     <script>
         const vscode = acquireVsCodeApi();
         
-        document.getElementById('saveToGlobalBtn').addEventListener('click', function() {
+        document.getElementById('editBtn').addEventListener('click', function() {
             vscode.postMessage({
-                command: 'saveToGlobal',
+                command: 'editSkill',
                 skillId: '${skill.id}'
             });
         });
@@ -249,12 +221,10 @@ export async function activate(context: vscode.ExtensionContext) {
         detailPanel.webview.onDidReceiveMessage(
             async message => {
                 switch (message.command) {
-                    case 'saveToGlobal':
-                        const result = await skillManager.importSkillToGlobal(message.skillId);
-                        if (result.success) {
-                            vscode.window.showInformationMessage(`技能 "${skill.name}" 已保存到全局！`);
-                        } else {
-                            vscode.window.showErrorMessage(`保存失败: ${result.error}`);
+                    case 'editSkill':
+                        const editSkill = skillManager.getSkill(message.skillId);
+                        if (editSkill) {
+                            skillWebviewProvider.showSkillEditorPanel(editSkill);
                         }
                         break;
                 }
@@ -318,10 +288,20 @@ export async function activate(context: vscode.ExtensionContext) {
   const refreshSkillsCommand = vscode.commands.registerCommand(
     "iflow.refreshSkills",
     async () => {
-      // 增量刷新：不清空列表，只添加新的技能
-      skillManager.incrementalRefresh();
+      // 先清空列表再加载数据
+      skillManager.reloadSkills();
       skillsTreeDataProvider.refresh();
       vscode.window.showInformationMessage("Skills refreshed successfully!");
+    },
+  );
+
+  // Clear skills list command
+  const clearSkillsCommand = vscode.commands.registerCommand(
+    "iflow.clearSkills",
+    async () => {
+      skillManager.clearSkills();
+      skillsTreeDataProvider.refresh();
+      vscode.window.showInformationMessage("Skills list cleared!");
     },
   );
 
@@ -647,14 +627,25 @@ export async function activate(context: vscode.ExtensionContext) {
             </div>
             
             <h2>技能内容预览</h2>
-            <div class="content-preview">${skill.content.substring(0, 1000)}${skill.content.length > 1000 ? "..." : ""}</div>
+            <div class="content-preview">${skill.content}</div>
             
-            <h2>完整文档</h2>
-            <div class="full-document">${skill.content}</div>
-            
-            <div class="info-box">
-                <strong>提示:</strong> 要编辑此技能，请选择"编辑"操作。
-            </div>
+            <script>
+                const vscode = acquireVsCodeApi();
+                
+                document.getElementById('saveToGlobalBtn').addEventListener('click', function() {
+                    vscode.postMessage({
+                        command: 'saveToGlobal',
+                        skillId: '${skill.id}'
+                    });
+                });
+                
+                document.getElementById('editBtn').addEventListener('click', function() {
+                    vscode.postMessage({
+                        command: 'editSkill',
+                        skillId: '${skill.id}'
+                    });
+                });
+            </script>
         </body>
         </html>
             `;
@@ -719,12 +710,6 @@ export async function activate(context: vscode.ExtensionContext) {
       if (action.label === "查看详情") {
         // 显示技能详情
         const skill = selected.skill;
-        const statusLabels: Record<string, string> = {
-          synced: "已同步",
-          modified: "已修改",
-          outdated: "待更新",
-          new: "新建",
-        };
 
         const detailPanel = vscode.window.createWebviewPanel(
           "iflowSkillDetail",
@@ -796,6 +781,7 @@ export async function activate(context: vscode.ExtensionContext) {
         .btn-success:hover {
             background-color: #3db892;
         }
+        
         h1 {
             font-size: 24px;
             font-weight: bold;
@@ -834,85 +820,87 @@ export async function activate(context: vscode.ExtensionContext) {
         .status-new { background-color: rgba(86, 156, 214, 0.2); color: #569cd6; }
         .content-preview {
             background-color: var(--vscode-textCodeBlock-background);
-            padding: 15px;
+            padding: 20px;
             border-radius: 4px;
-            margin: 10px 0;
-            max-height: 50vh;
-            min-height: 200px;
+            margin: 20px 0;
+            max-height: 70vh;
             overflow-y: auto;
             overflow-x: auto;
             white-space: pre-wrap;
             word-break: break-word;
             font-family: var(--vscode-editor-font-family);
             font-size: 13px;
-            line-height: 1.5;
+            line-height: 1.6;
+            border: 1px solid var(--vscode-panel-border);
         }
-        .info-box {
-            background-color: var(--vscode-editor-selectionBackground);
-            padding: 10px 15px;
+        .content-preview h1, .content-preview h2, .content-preview h3 {
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: var(--vscode-textLink-foreground);
+        }
+        .content-preview h1 {
+            font-size: 24px;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            padding-bottom: 10px;
+        }
+        .content-preview h2 {
+            font-size: 20px;
+        }
+        .content-preview h3 {
+            font-size: 16px;
+        }
+        .content-preview code {
+            background-color: rgba(255,255,255,0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .content-preview pre {
+            background-color: var(--vscode-editor-background);
+            padding: 15px;
             border-radius: 4px;
+            overflow-x: auto;
             margin: 10px 0;
-            border-left: 3px solid var(--vscode-textLink-foreground);
         }
     </style>
 </head>
 <body>
     <h1>${skill.name}</h1>
     
-    <h2>基本信息</h2>
-    <div class="detail-row">
-        <span class="detail-label">描述:</span>
-        <span class="detail-value">${skill.description || "无"}</span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">类型:</span>
-        <span class="detail-value">${skill.isGlobal ? '<span class="status-badge status-synced">全局技能</span>' : "本地技能"}</span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">项目路径:</span>
-        <span class="detail-value"><code>${skill.projectPath}</code></span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">绝对路径:</span>
-        <span class="detail-value"><code>${skill.absolutePath || skill.projectPath + "/" + skill.name + ".md"}</code></span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">版本:</span>
-        <span class="detail-value">v${skill.version}</span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">全局版本:</span>
-        <span class="detail-value">${skill.globalVersion ? "v" + skill.globalVersion : "未同步"}</span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">同步状态:</span>
-        <span class="detail-value">
-            <span class="status-badge status-${skill.syncStatus}">${statusLabels[skill.syncStatus] || skill.syncStatus}</span>
-        </span>
+    <div class="button-container">
+        <button class="btn-secondary" id="editBtn">编辑</button>
     </div>
     
-    <h2>时间信息</h2>
-    <div class="detail-row">
-        <span class="detail-label">创建时间:</span>
-        <span class="detail-value">${new Date(skill.createdAt).toLocaleString("zh-CN")}</span>
-    </div>
-    <div class="detail-row">
-        <span class="detail-label">最后更新:</span>
-        <span class="detail-value">${new Date(skill.updatedAt).toLocaleString("zh-CN")}</span>
-    </div>
+    <div class="content-preview">${skill.content}</div>
     
-    <h2>技能内容预览</h2>
-    <div class="content-preview">${skill.content.substring(0, 1000)}${skill.content.length > 1000 ? "..." : ""}</div>
-    
-    <h2>完整文档</h2>
-    <div class="full-document">${skill.content}</div>
-    
-    <div class="info-box">
-        <strong>提示:</strong> 要编辑此技能，请选择"编辑"操作。
-    </div>
+    <script>
+        const vscode = acquireVsCodeApi();
+        
+        document.getElementById('editBtn').addEventListener('click', function() {
+            vscode.postMessage({
+                command: 'editSkill',
+                skillId: '${skill.id}'
+            });
+        });
+    </script>
 </body>
 </html>
-            `;
+        `;
+        
+        // 处理webview消息
+        detailPanel.webview.onDidReceiveMessage(
+          async message => {
+            switch (message.command) {
+              case 'editSkill':
+                const editSkill = skillManager.getSkill(message.skillId);
+                if (editSkill) {
+                  skillWebviewProvider.showSkillEditorPanel(editSkill);
+                }
+                break;
+            }
+          },
+          undefined,
+          context.subscriptions
+        );
       } else if (action.label === "编辑") {
         skillWebviewProvider.showSkillEditorPanel(selected.skill);
       } else if (action.label === "删除") {
@@ -945,10 +933,21 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   );
 
+  // Open terminal command
+  const openTerminalCommand = vscode.commands.registerCommand(
+    "iflow.openTerminal",
+    () => {
+      const terminal = vscode.window.createTerminal("iFlow Terminal");
+      terminal.sendText("iflow -y");
+      terminal.show();
+    },
+  );
+
   context.subscriptions.push(
     treeView,
     generateSkillCommand,
     refreshSkillsCommand,
+    clearSkillsCommand,
     checkSyncStatusCommand,
     syncFromGlobalCommand,
     editSkillCommand,
@@ -957,11 +956,12 @@ export async function activate(context: vscode.ExtensionContext) {
     openSkillEditorCommand,
     showAllSkillsCommand,
     viewSkillDetailCommand,
+    openTerminalCommand,
   );
 
   // 实时刷新 skill 列表（每10秒一次）
   const refreshInterval = setInterval(async () => {
-    skillManager.incrementalRefresh();
+    skillManager.reloadSkills();
     skillsTreeDataProvider.refresh();
   }, 10000);
 

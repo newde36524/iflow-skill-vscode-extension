@@ -49,21 +49,17 @@ class SkillsTreeItem extends vscode.TreeItem {
             // 显示绝对路径
             const absolutePath = skill.absolutePath || path.join(skill.projectPath, `${skill.name}.md`);
             this.tooltip = `${skill.description}\nPath: ${absolutePath}\nVersion: v${skill.version}\nStatus: ${skill.syncStatus}${skill.isGlobal ? '\nType: Global Skill' : ''}`;
-            // 根据syncStatus显示不同的图标
-            switch (skill.syncStatus) {
-                case 'synced':
-                    this.iconPath = new vscode.ThemeIcon('check', new vscode.ThemeColor('terminal.ansiGreen'));
-                    break;
-                case 'modified':
-                    this.iconPath = new vscode.ThemeIcon('edit', new vscode.ThemeColor('terminal.ansiYellow'));
-                    break;
-                case 'outdated':
-                    this.iconPath = new vscode.ThemeIcon('arrow-circle-down', new vscode.ThemeColor('terminal.ansiRed'));
-                    break;
-                case 'new':
-                default:
-                    this.iconPath = new vscode.ThemeIcon('file-code', new vscode.ThemeColor('terminal.ansiBlue'));
-                    break;
+            // 检查当前工作区目录是否与技能匹配
+            const currentWorkspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            const isMatch = currentWorkspaceFolder && (skill.projectPath === currentWorkspaceFolder || skill.projectPath.startsWith(currentWorkspaceFolder + path.sep));
+            // 根据是否匹配显示不同透明度的绿色圆点
+            if (isMatch) {
+                // 匹配：实心绿色圆点
+                this.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('terminal.ansiGreen'));
+            }
+            else {
+                // 不匹配：空心绿色圆点
+                this.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('terminal.ansiGreen'));
             }
             // 添加描述信息
             this.description = `v${skill.version}`;
@@ -78,6 +74,10 @@ class SkillsTreeItem extends vscode.TreeItem {
             // 如果是全局技能，添加标识
             if (skill.isGlobal) {
                 this.description += ' · [全局]';
+            }
+            // 如果匹配，添加 [当前项目] 标识
+            if (isMatch) {
+                this.description += ' · [当前项目]';
             }
         }
         else {

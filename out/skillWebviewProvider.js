@@ -83,9 +83,6 @@ class SkillWebviewProvider {
                 case 'save':
                     await this.handleSave(message.content);
                     break;
-                case 'saveAndImport':
-                    await this.handleSaveAndImport(message.content);
-                    break;
                 case 'preview':
                     this.handlePreview(message.content);
                     break;
@@ -104,19 +101,19 @@ class SkillWebviewProvider {
             else {
                 vscode.window.showWarningMessage(`Skill saved locally, but failed to save to global directory: ${result.error}`);
             }
+            // 更新预览区域
+            this.updatePreview(content);
         }
     }
-    async handleSaveAndImport(content) {
-        if (this.currentSkill) {
-            this.currentSkill.content = content;
-            await this.skillManager.updateSkill(this.currentSkill);
-            const result = await this.skillManager.importSkillToGlobal(this.currentSkill.id);
-            if (result.success) {
-                vscode.window.showInformationMessage('Skill saved and imported to global iFlow!');
-            }
-            else {
-                vscode.window.showErrorMessage(`Failed to import skill: ${result.error}`);
-            }
+    updatePreview(content) {
+        if (this.currentPanel) {
+            const renderedContent = this.md.render(content);
+            const previewElement = this.currentPanel.webview.asWebviewUri(vscode.Uri.parse('data:text/html;charset=utf-8,' + encodeURIComponent(renderedContent)));
+            // 更新预览区域的内容
+            this.currentPanel.webview.postMessage({
+                command: 'updatePreview',
+                content: renderedContent
+            });
         }
     }
     handlePreview(content) {
@@ -424,6 +421,7 @@ class SkillWebviewProvider {
             width: 100%;
         }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.2/dist/markdown-it.min.js"></script>
 </head>
 <body>
     <div class="header">
@@ -445,9 +443,8 @@ class SkillWebviewProvider {
             </div>
         </div>
         <div class="button-group">
-            <button class="btn-secondary" id="previewBtn">预览</button>
+            <button class="btn-secondary" id="previewBtn">隐藏预览</button>
             <button class="btn-secondary" id="saveBtn">保存</button>
-            <button class="btn-primary" id="saveAndImportBtn">保存并导入</button>
         </div>
     </div>
     
@@ -471,7 +468,6 @@ class SkillWebviewProvider {
         const preview = document.getElementById('preview');
         const previewBtn = document.getElementById('previewBtn');
         const saveBtn = document.getElementById('saveBtn');
-        const saveAndImportBtn = document.getElementById('saveAndImportBtn');
         const editorContainer = document.getElementById('editor-container');
         
         let isSplitView = true;
@@ -499,15 +495,7 @@ class SkillWebviewProvider {
                 content: editor.value
             });
         });
-        
-        // Save and import skill
-        saveAndImportBtn.addEventListener('click', () => {
-            vscode.postMessage({
-                command: 'saveAndImport',
-                content: editor.value
-            });
-        });
-        
+
         // Auto-save on blur
         editor.addEventListener('blur', () => {
             vscode.postMessage({
@@ -529,7 +517,22 @@ class SkillWebviewProvider {
         
         // Update preview on input
         editor.addEventListener('input', () => {
-            // Could implement live preview here if needed
+            // 实时更新预览
+            const md = window.markdownit({
+                html: true,
+                linkify: true,
+                typographer: true
+            });
+            const renderedContent = md.render(editor.value);
+            preview.innerHTML = renderedContent;
+        });
+        
+        // Handle messages from extension
+        window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.command === 'updatePreview') {
+                preview.innerHTML = message.content;
+            }
         });
     </script>
 </body>
