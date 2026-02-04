@@ -231,6 +231,22 @@ class SkillManager {
         }
         this.skills.set(id, skill);
         await this.saveSkillToFile(skill);
+        // 自动导入到全局目录
+        if (progressCallback) {
+            progressCallback(`正在导入到全局技能目录...`);
+        }
+        const importResult = await this.importSkillToGlobal(id);
+        if (!importResult.success && importResult.error) {
+            console.error(`Failed to import skill to global: ${importResult.error}`);
+            if (progressCallback) {
+                progressCallback(`导入到全局目录失败: ${importResult.error}`);
+            }
+        }
+        else {
+            if (progressCallback) {
+                progressCallback(`已成功导入到全局技能目录`);
+            }
+        }
         if (progressCallback) {
             progressCallback(`技能创建完成！`);
         }
