@@ -381,6 +381,11 @@ async function activate(context) {
     const editSkillCommand = vscode.commands.registerCommand("iflow.editSkill", async (skillItem) => {
         const skill = skillManager.getSkill(skillItem.id);
         if (skill) {
+            console.log('编辑 skill - ID:', skill.id);
+            console.log('编辑 skill - name:', skill.name);
+            console.log('编辑 skill - absolutePath:', skill.absolutePath);
+            console.log('编辑 skill - projectPath:', skill.projectPath);
+            console.log('编辑 skill - isGlobal:', skill.isGlobal);
             skillWebviewProvider.showSkillEditor(skill);
         }
     });

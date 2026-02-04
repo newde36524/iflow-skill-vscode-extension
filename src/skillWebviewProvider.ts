@@ -1,255 +1,233 @@
-import * as vscode from 'vscode';
-import MarkdownIt from 'markdown-it';
-import * as path from 'path';
-import { SkillManager, Skill } from './skillManager';
+import * as vscode from "vscode";
+import MarkdownIt from "markdown-it";
+import * as path from "path";
+import { SkillManager, Skill } from "./skillManager";
 
 export class SkillWebviewProvider implements vscode.WebviewViewProvider {
-    private md: MarkdownIt;
-    private currentPanel?: vscode.WebviewPanel;
-    private currentSkill?: Skill;
+  private md: MarkdownIt;
+  private currentPanel?: vscode.WebviewPanel;
+  private currentSkill?: Skill;
 
-    constructor(
-        private readonly _extensionUri: vscode.Uri,
-        private readonly skillManager: SkillManager
-    ) {
-        this.md = new MarkdownIt({
-            html: true,
-            linkify: true,
-            typographer: true
-        });
+  constructor(
+    private readonly _extensionUri: vscode.Uri,
+    private readonly skillManager: SkillManager,
+  ) {
+    this.md = new MarkdownIt({
+      html: true,
+      linkify: true,
+      typographer: true,
+    });
+  }
+
+  resolveWebviewView(
+    webviewView: vscode.WebviewView,
+    context: vscode.WebviewViewResolveContext<unknown>,
+    _token: vscode.CancellationToken,
+  ): void | Thenable<void> {
+    // This is required by WebviewViewProvider interface
+    // We don't need to implement this for our use case
+  }
+
+  showSkillEditor(skill: Skill) {
+    // 只在没有 absolutePath 时才设置（优先保留原有的 absolutePath）
+    if (!skill.absolutePath) {
+      const path = require("path");
+      skill.absolutePath = path.join(
+        skill.projectPath,
+        ".iflow",
+        "skills",
+        `${skill.name}.md`,
+      );
+    }
+    console.log("showSkillEditor - absolutePath:", skill.absolutePath);
+    this.currentSkill = skill;
+    this.showSkillEditorPanel(skill);
+  }
+
+  /**
+   * 获取跨平台的 iflow 全局技能目录路径
+   */
+  private static getIflowGlobalSkillsPath(): string {
+    const config = vscode.workspace.getConfiguration("iflow");
+    const configPath = config.get<string>("globalSkillsPath");
+    if (configPath) {
+      return configPath;
     }
 
-    resolveWebviewView(
-        webviewView: vscode.WebviewView,
-        context: vscode.WebviewViewResolveContext<unknown>,
-        _token: vscode.CancellationToken
-    ): void | Thenable<void> {
-        // This is required by WebviewViewProvider interface
-        // We don't need to implement this for our use case
+    const platform = process.platform;
+    let homeDir: string;
+
+    if (platform === "win32") {
+      homeDir = process.env.USERPROFILE || process.env.HOME || "";
+    } else {
+      homeDir = process.env.HOME || "";
     }
 
-    showSkillEditor(skill: Skill) {
-        // 确保 skill 对象有 absolutePath
-        if (!skill.absolutePath) {
-            const path = require('path');
-            skill.absolutePath = path.join(skill.projectPath, '.iflow', 'skills', `${skill.name}.md`);
+    return path.join(homeDir, ".iflow", "skills");
+  }
+
+  public showSkillEditorPanel(skill: Skill) {
+    // 确保设置了 absolutePath
+    if (!skill.absolutePath) {
+      const path = require("path");
+      skill.absolutePath = path.join(
+        skill.projectPath,
+        ".iflow",
+        "skills",
+        `${skill.name}.md`,
+      );
+    }
+    console.log("showSkillEditorPanel - absolutePath:", skill.absolutePath);
+    this.currentSkill = skill;
+
+    if (this.currentPanel) {
+      this.currentPanel.dispose();
+    }
+
+    const column = vscode.window.activeTextEditor
+      ? vscode.window.activeTextEditor.viewColumn
+      : undefined;
+
+    this.currentPanel = vscode.window.createWebviewPanel(
+      "iflowSkillEditor",
+      `Edit Skill: ${skill.name}`,
+      column || vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [this._extensionUri],
+      },
+    );
+
+    this.currentPanel.webview.html = this.getWebviewContent(
+      skill,
+      this.currentPanel.webview,
+    );
+
+    this.currentPanel.onDidChangeViewState(
+      (e) => {
+        if (e.webviewPanel.visible && this.currentSkill) {
+          this.currentPanel!.webview.html = this.getWebviewContent(
+            this.currentSkill,
+            this.currentPanel!.webview,
+          );
         }
-        this.currentSkill = skill;
-        this.showSkillEditorPanel(skill);
-    }
+      },
+      undefined,
+      void 0,
+    );
 
-    /**
-     * 获取跨平台的 iflow 全局技能目录路径
-     */
-    private static getIflowGlobalSkillsPath(): string {
-      const config = vscode.workspace.getConfiguration("iflow");
-      const configPath = config.get<string>("globalSkillsPath");
-      if (configPath) {
-        return configPath;
+    this.currentPanel.onDidDispose(
+      () => {
+        this.currentPanel = undefined;
+      },
+      undefined,
+      void 0,
+    );
+
+    this.currentPanel.webview.onDidReceiveMessage(
+      async (message) => {
+        switch (message.command) {
+          case "save":
+            await this.handleSave(message.content);
+            break;
+          case "preview":
+            this.handlePreview(message.content);
+            break;
+        }
+      },
+      undefined,
+      void 0,
+    );
+  }
+
+  private async handleSave(content: string) {
+    if (this.currentSkill && this.currentSkill.absolutePath) {
+      try {
+        // 直接将编辑后的内容覆盖到绝对路径文件
+        const fs = require("fs");
+        await fs.promises.writeFile(
+          this.currentSkill.absolutePath,
+          content,
+          "utf-8",
+        );
+
+        vscode.window.showInformationMessage("Skill saved successfully!");
+      } catch (error) {
+        console.error("Error saving skill:", error);
+        vscode.window.showErrorMessage(`保存失败: ${error}`);
       }
-
-      const platform = process.platform;
-      let homeDir: string;
-
-      if (platform === 'win32') {
-        homeDir = process.env.USERPROFILE || process.env.HOME || '';
-      } else {
-        homeDir = process.env.HOME || '';
-      }
-
-      return path.join(homeDir, '.iflow', 'skills');
+    } else {
+      vscode.window.showErrorMessage("保存失败: 文件路径不存在");
     }
+  }
 
-    public showSkillEditorPanel(skill: Skill) {
-        if (this.currentPanel) {
-            this.currentPanel.dispose();
-        }
+  private addVersionToContent(content: string, version: number): string {
+    // 移除现有的版本标记
+    let cleanedContent = content.replace(
+      /<!--\s*VERSION:\s*\d+\s*-->\s*\n?/g,
+      "",
+    );
 
-        const column = vscode.window.activeTextEditor
-            ? vscode.window.activeTextEditor.viewColumn
-            : undefined;
+    // 在内容开头添加版本标记
+    const versionMarker = `<!-- VERSION: ${version} -->\n\n`;
+    return versionMarker + cleanedContent;
+  }
 
-        this.currentPanel = vscode.window.createWebviewPanel(
-            'iflowSkillEditor',
-            `Edit Skill: ${skill.name}`,
-            column || vscode.ViewColumn.One,
-            {
-                enableScripts: true,
-                retainContextWhenHidden: true,
-                localResourceRoots: [this._extensionUri]
-            }
-        );
-
-        this.currentPanel.webview.html = this.getWebviewContent(skill, this.currentPanel.webview);
-
-        this.currentPanel.onDidChangeViewState(
-            e => {
-                if (e.webviewPanel.visible && this.currentSkill) {
-                    this.currentPanel!.webview.html = this.getWebviewContent(this.currentSkill, this.currentPanel!.webview);
-                }
-            },
-            undefined,
-            void 0
-        );
-
-        this.currentPanel.onDidDispose(
-            () => {
-                this.currentPanel = undefined;
-            },
-            undefined,
-            void 0
-        );
-
-        this.currentPanel.webview.onDidReceiveMessage(
-            async message => {
-                switch (message.command) {
-                    case 'save':
-                        await this.handleSave(message.content);
-                        break;
-                    case 'preview':
-                        this.handlePreview(message.content);
-                        break;
-                }
-            },
-            undefined,
-            void 0
-        );
+  private updatePreview(content: string) {
+    if (this.currentPanel) {
+      const renderedContent = this.md.render(content);
+      const previewElement = this.currentPanel.webview.asWebviewUri(
+        vscode.Uri.parse(
+          "data:text/html;charset=utf-8," + encodeURIComponent(renderedContent),
+        ),
+      );
+      // 更新预览区域的内容
+      this.currentPanel.webview.postMessage({
+        command: "updatePreview",
+        content: renderedContent,
+      });
     }
+  }
 
-    private async handleSave(content: string) {
-        if (this.currentSkill && this.currentSkill.absolutePath) {
-            this.currentSkill.content = content;
+  private handlePreview(content: string) {
+    if (this.currentPanel) {
+      const renderedContent = this.md.render(content);
 
-            // 发送初始进度
-            this.currentPanel?.webview.postMessage({
-                command: 'updateSyncProgress',
-                progress: 0,
-                message: '开始保存...'
-            });
+      // 创建预览面板，在右侧显示
+      const previewPanel = vscode.window.createWebviewPanel(
+        "iflowSkillPreview",
+        `Preview: ${this.currentSkill?.name || "Skill"}`,
+        vscode.ViewColumn.Beside,
+        {
+          enableScripts: false,
+          retainContextWhenHidden: true,
+        },
+      );
 
-            try {
-                // 直接保存到绝对路径下的 skill 文件
-                this.currentPanel?.webview.postMessage({
-                    command: 'updateSyncProgress',
-                    progress: 50,
-                    message: '正在保存到文件...'
-                });
-
-                const fs = require('fs');
-                const path = require('path');
-                const contentWithVersion = this.addVersionToContent(content, this.currentSkill.version);
-                await fs.promises.writeFile(this.currentSkill.absolutePath, contentWithVersion, 'utf-8');
-
-                // 更新 skill 信息
-                this.currentSkill.updatedAt = new Date().toISOString();
-                this.currentSkill.version += 1;
-
-                // 更新内存中的 skill 对象
-                this.skillManager.updateSkillInMemory(this.currentSkill!);
-
-                // 完成
-                this.currentPanel?.webview.postMessage({
-                    command: 'updateSyncProgress',
-                    progress: 100,
-                    message: '完成！'
-                });
-
-                // 更新状态显示
-                this.currentPanel?.webview.postMessage({
-                    command: 'updateSyncStatus',
-                    status: 'synced',
-                    statusLabel: '已保存'
-                });
-
-                // 更新初始内容，以便后续编辑检测
-                this.currentPanel?.webview.postMessage({
-                    command: 'updateInitialContent',
-                    content: content
-                });
-
-                vscode.window.showInformationMessage('Skill saved successfully!');
-
-                // 更新预览区域
-                this.updatePreview(content);
-
-                // 2秒后隐藏进度条
-                setTimeout(() => {
-                    this.currentPanel?.webview.postMessage({
-                        command: 'hideSyncProgress'
-                    });
-                }, 2000);
-            } catch (error) {
-                console.error("Error saving skill:", error);
-                vscode.window.showErrorMessage(`保存失败: ${error}`);
-
-                this.currentPanel?.webview.postMessage({
-                    command: 'hideSyncProgress'
-                });
-            }
-        }
+      previewPanel.webview.html = this.getPreviewWebviewContent(
+        renderedContent,
+        previewPanel.webview,
+      );
     }
+  }
 
-    private addVersionToContent(content: string, version: number): string {
-        // 移除现有的版本标记
-        let cleanedContent = content.replace(
-            /<!--\s*VERSION:\s*\d+\s*-->\s*\n?/g,
-            ""
-        );
+  private getWebviewContent(skill: Skill, webview: vscode.Webview): string {
+    const renderedContent = this.md.render(skill.content);
+    const statusLabels: Record<string, string> = {
+      synced: "已同步",
+      modified: "已修改",
+      outdated: "待更新",
+      new: "新建",
+    };
+    const statusColors: Record<string, string> = {
+      synced: "#4ec9b0",
+      modified: "#dcdcaa",
+      outdated: "#ce9178",
+      new: "#569cd6",
+    };
 
-        // 在内容开头添加版本标记
-        const versionMarker = `<!-- VERSION: ${version} -->\n\n`;
-        return versionMarker + cleanedContent;
-    }
-
-    private updatePreview(content: string) {
-        if (this.currentPanel) {
-            const renderedContent = this.md.render(content);
-            const previewElement = this.currentPanel.webview.asWebviewUri(
-                vscode.Uri.parse('data:text/html;charset=utf-8,' + encodeURIComponent(renderedContent))
-            );
-            // 更新预览区域的内容
-            this.currentPanel.webview.postMessage({
-                command: 'updatePreview',
-                content: renderedContent
-            });
-        }
-    }
-
-    private handlePreview(content: string) {
-        if (this.currentPanel) {
-            const renderedContent = this.md.render(content);
-            
-            // 创建预览面板，在右侧显示
-            const previewPanel = vscode.window.createWebviewPanel(
-                'iflowSkillPreview',
-                `Preview: ${this.currentSkill?.name || 'Skill'}`,
-                vscode.ViewColumn.Beside,
-                {
-                    enableScripts: false,
-                    retainContextWhenHidden: true
-                }
-            );
-
-            previewPanel.webview.html = this.getPreviewWebviewContent(renderedContent, previewPanel.webview);
-        }
-    }
-
-    private getWebviewContent(skill: Skill, webview: vscode.Webview): string {
-        const renderedContent = this.md.render(skill.content);
-        const statusLabels: Record<string, string> = {
-            'synced': '已同步',
-            'modified': '已修改',
-            'outdated': '待更新',
-            'new': '新建'
-        };
-        const statusColors: Record<string, string> = {
-            'synced': '#4ec9b0',
-            'modified': '#dcdcaa',
-            'outdated': '#ce9178',
-            'new': '#569cd6'
-        };
-        
-        return `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -582,7 +560,7 @@ export class SkillWebviewProvider implements vscode.WebviewViewProvider {
     <div class="header">
         <div class="header-left">
             <div class="title">${this.escapeHtml(skill.name)}</div>
-            <div class="skill-path">${this.escapeHtml(skill.absolutePath || '未知路径')}</div>
+            <div class="skill-path">${this.escapeHtml(skill.absolutePath || "未知路径")}</div>
             <div class="skill-meta">
                 <div class="meta-item">
                     <span class="meta-label">版本:</span>
@@ -590,7 +568,7 @@ export class SkillWebviewProvider implements vscode.WebviewViewProvider {
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">全局版本:</span>
-                    <span>v${skill.globalVersion ?? '未同步'}</span>
+                    <span>v${skill.globalVersion ?? "未同步"}</span>
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">状态:</span>
@@ -741,10 +719,13 @@ export class SkillWebviewProvider implements vscode.WebviewViewProvider {
     </script>
 </body>
 </html>`;
-    }
+  }
 
-    private getPreviewWebviewContent(renderedContent: string, webview: vscode.Webview): string {
-        return `<!DOCTYPE html>
+  private getPreviewWebviewContent(
+    renderedContent: string,
+    webview: vscode.Webview,
+  ): string {
+    return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -877,16 +858,16 @@ export class SkillWebviewProvider implements vscode.WebviewViewProvider {
     </div>
 </body>
 </html>`;
-    }
+  }
 
-    private escapeHtml(text: string): string {
-        const map: { [key: string]: string } = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#039;'
-        };
-        return text.replace(/[&<>"']/g, m => map[m]);
-    }
+  private escapeHtml(text: string): string {
+    const map: { [key: string]: string } = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
+    };
+    return text.replace(/[&<>"']/g, (m) => map[m]);
+  }
 }
