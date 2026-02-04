@@ -115,7 +115,7 @@ class SkillWebviewProvider {
         }, undefined, void 0);
     }
     async handleSave(content) {
-        if (this.currentSkill) {
+        if (this.currentSkill && this.currentSkill.absolutePath) {
             this.currentSkill.content = content;
             // 发送初始进度
             this.currentPanel?.webview.postMessage({
@@ -124,60 +124,21 @@ class SkillWebviewProvider {
                 message: '开始保存...'
             });
             try {
-                // 优先保存修改信息到 skill 文件
+                // 直接保存到绝对路径下的 skill 文件
                 this.currentPanel?.webview.postMessage({
                     command: 'updateSyncProgress',
-                    progress: 20,
-                    message: '正在保存到 skill 文件...'
+                    progress: 50,
+                    message: '正在保存到文件...'
                 });
-                await this.skillManager.saveSkillToProject(this.currentSkill);
-                // 执行 iflow 命令创建或更新 skill
-                this.currentPanel?.webview.postMessage({
-                    command: 'updateSyncProgress',
-                    progress: 40,
-                    message: '正在执行 iflow 命令...'
-                });
-                const { exec } = require("child_process");
-                const command = `iflow -p "创建或更新 skill: ${this.currentSkill.name}"`;
-                await new Promise((resolve, reject) => {
-                    exec(command, (error, stdout, stderr) => {
-                        if (error) {
-                            console.error("Error executing iflow command:", error);
-                            console.error("stderr:", stderr);
-                            resolve();
-                        }
-                        else {
-                            console.log("iflow command output:", stdout);
-                            resolve();
-                        }
-                    });
-                });
+                const fs = require('fs');
+                const path = require('path');
+                const contentWithVersion = this.addVersionToContent(content, this.currentSkill.version);
+                await fs.promises.writeFile(this.currentSkill.absolutePath, contentWithVersion, 'utf-8');
                 // 更新 skill 信息
-                this.currentPanel?.webview.postMessage({
-                    command: 'updateSyncProgress',
-                    progress: 60,
-                    message: '正在更新 skill 信息...'
-                });
                 this.currentSkill.updatedAt = new Date().toISOString();
                 this.currentSkill.version += 1;
-                this.currentSkill.syncStatus = "modified";
                 // 更新内存中的 skill 对象
                 this.skillManager.updateSkillInMemory(this.currentSkill);
-                await this.skillManager.saveSkillToFilePublic(this.currentSkill);
-                // 同步到全局目录
-                this.currentPanel?.webview.postMessage({
-                    command: 'updateSyncProgress',
-                    progress: 80,
-                    message: '正在同步到全局目录...'
-                });
-                const result = await this.skillManager.importSkillToGlobal(this.currentSkill.id);
-                // 删除项目本地文件
-                this.currentPanel?.webview.postMessage({
-                    command: 'updateSyncProgress',
-                    progress: 90,
-                    message: '正在清理临时文件...'
-                });
-                await this.skillManager.deleteProjectLocalSkill(this.currentSkill.id);
                 // 完成
                 this.currentPanel?.webview.postMessage({
                     command: 'updateSyncProgress',
@@ -188,19 +149,14 @@ class SkillWebviewProvider {
                 this.currentPanel?.webview.postMessage({
                     command: 'updateSyncStatus',
                     status: 'synced',
-                    statusLabel: '已同步'
+                    statusLabel: '已保存'
                 });
                 // 更新初始内容，以便后续编辑检测
                 this.currentPanel?.webview.postMessage({
                     command: 'updateInitialContent',
                     content: content
                 });
-                if (result.success) {
-                    vscode.window.showInformationMessage('Skill saved successfully!');
-                }
-                else {
-                    vscode.window.showWarningMessage(`Skill saved locally, but failed to save to global directory: ${result.error}`);
-                }
+                vscode.window.showInformationMessage('Skill saved successfully!');
                 // 更新预览区域
                 this.updatePreview(content);
                 // 2秒后隐藏进度条
@@ -218,6 +174,13 @@ class SkillWebviewProvider {
                 });
             }
         }
+    }
+    addVersionToContent(content, version) {
+        // 移除现有的版本标记
+        let cleanedContent = content.replace(/<!--\s*VERSION:\s*\d+\s*-->\s*\n?/g, "");
+        // 在内容开头添加版本标记
+        const versionMarker = `<!-- VERSION: ${version} -->\n\n`;
+        return versionMarker + cleanedContent;
     }
     updatePreview(content) {
         if (this.currentPanel) {

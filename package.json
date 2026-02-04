@@ -4,7 +4,7 @@
   "icon": "logo.png",
   "displayName": "iFlow Skill Manager",
   "description": "Manage iFlow skills for your projects",
-  "version": "0.2.121",
+  "version": "0.2.1213",
   "engines": {
     "vscode": "^1.96.0"
   },
