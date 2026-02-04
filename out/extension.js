@@ -850,7 +850,20 @@ async function activate(context) {
         terminal.sendText("iflow -y");
         terminal.show();
     });
-    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, checkSyncStatusCommand, syncFromGlobalCommand, editSkillCommand, saveSkillCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand);
+    // Install iFlow command
+    const installIflowCommand = vscode.commands.registerCommand("iflow.install", async () => {
+        const isInstalled = await skillManager.checkIflowInstalled();
+        if (isInstalled) {
+            const choice = await vscode.window.showInformationMessage("iFlow CLI 已安装，是否需要重新安装？", "重新安装", "取消");
+            if (choice !== "重新安装") {
+                return;
+            }
+        }
+        const openUrl = "https://cli.iflow.cn/?utm_source=isflower";
+        await vscode.env.openExternal(vscode.Uri.parse(openUrl));
+        vscode.window.showInformationMessage("已打开 iFlow CLI 官网，请按照页面提示进行安装。", "OK");
+    });
+    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, checkSyncStatusCommand, syncFromGlobalCommand, editSkillCommand, saveSkillCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand);
     // 实时刷新 skill 列表（每10秒一次）
     const refreshInterval = setInterval(async () => {
         skillManager.reloadSkills();

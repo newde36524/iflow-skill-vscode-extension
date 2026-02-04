@@ -37,6 +37,15 @@ export class SkillManager {
     this.loadSkills();
   }
 
+  async checkIflowInstalled(): Promise<boolean> {
+    const { exec } = require("child_process");
+    return new Promise((resolve) => {
+      exec("iflow --version", (error: any) => {
+        resolve(!error);
+      });
+    });
+  }
+
   private ensureDirectoriesExist() {
     if (!fs.existsSync(this.skillsPath)) {
       fs.mkdirSync(this.skillsPath, { recursive: true });
