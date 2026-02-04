@@ -300,13 +300,20 @@ async function activate(context) {
     });
     // Generate skill command
     const generateSkillCommand = vscode.commands.registerCommand("iflow.generateSkill", async () => {
-        // Let user select any folder
+        // 获取当前工作区根目录作为默认路径
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        let defaultUri;
+        if (workspaceFolders && workspaceFolders.length > 0) {
+            defaultUri = workspaceFolders[0].uri;
+        }
+        // 让用户选择文件夹，默认路径为当前工作区根目录
         const folderUri = await vscode.window.showOpenDialog({
             canSelectFolders: true,
             canSelectFiles: false,
             canSelectMany: false,
-            openLabel: "Select Folder for Skill",
+            openLabel: "选择要创建 Skill 的文件夹",
             title: "选择要创建 Skill 的文件夹",
+            defaultUri: defaultUri,
         });
         if (!folderUri || folderUri.length === 0) {
             return;
