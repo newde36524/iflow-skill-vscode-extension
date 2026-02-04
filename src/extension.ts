@@ -32,7 +32,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Handle double-click on skill items to show details
   treeView.onDidChangeSelection(async (e) => {
-    if (e.selection.length === 1 && e.selection[0].contextValue === 'skill') {
+    if (e.selection.length === 1 && e.selection[0].contextValue === "skill") {
       const skillItem = e.selection[0];
       if (skillItem.id) {
         // 保存 skillId 以避免 TypeScript 类型错误
@@ -44,7 +44,9 @@ export async function activate(context: vscode.ExtensionContext) {
           const existingPanel = openDetailPanels.get(skillId);
           if (existingPanel) {
             // 如果已打开，直接显示该页面
-            existingPanel.reveal(existingPanel.viewColumn || vscode.ViewColumn.One);
+            existingPanel.reveal(
+              existingPanel.viewColumn || vscode.ViewColumn.One,
+            );
             return;
           }
 
@@ -74,7 +76,7 @@ export async function activate(context: vscode.ExtensionContext) {
             openDetailPanels.delete(skillId);
           });
 
-        detailPanel.webview.html = `
+          detailPanel.webview.html = `
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -243,7 +245,7 @@ export async function activate(context: vscode.ExtensionContext) {
     <div class="header">
         <div class="header-left">
             <div class="title">${skill.name}</div>
-            <div class="skill-path">${skill.absolutePath || '未知路径'}</div>
+            <div class="skill-path">${skill.absolutePath || "未知路径"}</div>
         </div>
         <div class="button-group">
             <button class="btn-secondary" id="editBtn">编辑</button>
@@ -265,22 +267,22 @@ export async function activate(context: vscode.ExtensionContext) {
 </body>
 </html>
         `;
-        
-        // 处理webview消息
-        detailPanel.webview.onDidReceiveMessage(
-            async message => {
-                switch (message.command) {
-                    case 'editSkill':
-                        const editSkill = skillManager.getSkill(message.skillId);
-                        if (editSkill) {
-                            skillWebviewProvider.showSkillEditorPanel(editSkill);
-                        }
-                        break;
-                }
+
+          // 处理webview消息
+          detailPanel.webview.onDidReceiveMessage(
+            async (message) => {
+              switch (message.command) {
+                case "editSkill":
+                  const editSkill = skillManager.getSkill(message.skillId);
+                  if (editSkill) {
+                    skillWebviewProvider.showSkillEditorPanel(editSkill);
+                  }
+                  break;
+              }
             },
             undefined,
-            context.subscriptions
-        );
+            context.subscriptions,
+          );
         }
       }
     }
@@ -318,7 +320,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const confirm = await vscode.window.showInformationMessage(
         `确认为文件夹 "${projectName}" 创建 Skill 吗？`,
         { modal: true },
-        "确认"
+        "确认",
       );
 
       if (!confirm) {
@@ -342,13 +344,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
           await skillManager.createSkill(
             projectName,
-            "",
+            projectName,
             projectPath,
             progressCallback,
           );
 
           progress.report({ increment: 100, message: "完成！" });
-        }
+        },
       );
 
       skillsTreeDataProvider.refresh();
@@ -426,11 +428,11 @@ export async function activate(context: vscode.ExtensionContext) {
     async (skillItem) => {
       const skill = skillManager.getSkill(skillItem.id);
       if (skill) {
-        console.log('编辑 skill - ID:', skill.id);
-        console.log('编辑 skill - name:', skill.name);
-        console.log('编辑 skill - absolutePath:', skill.absolutePath);
-        console.log('编辑 skill - projectPath:', skill.projectPath);
-        console.log('编辑 skill - isGlobal:', skill.isGlobal);
+        console.log("编辑 skill - ID:", skill.id);
+        console.log("编辑 skill - name:", skill.name);
+        console.log("编辑 skill - absolutePath:", skill.absolutePath);
+        console.log("编辑 skill - projectPath:", skill.projectPath);
+        console.log("编辑 skill - isGlobal:", skill.isGlobal);
         skillWebviewProvider.showSkillEditor(skill);
       }
     },
@@ -498,12 +500,16 @@ export async function activate(context: vscode.ExtensionContext) {
         // 删除全局技能文件
         await skillManager.deleteSkillFromGlobal(skillItem.id);
         skillsTreeDataProvider.refresh();
-        vscode.window.showInformationMessage(`Global skill "${skill.name}" file deleted!`);
+        vscode.window.showInformationMessage(
+          `Global skill "${skill.name}" file deleted!`,
+        );
       } else if (choice?.title === "Remove from List") {
         // 仅从列表移除
         await skillManager.removeSkillFromList(skillItem.id);
         skillsTreeDataProvider.refresh();
-        vscode.window.showInformationMessage(`Skill "${skill.name}" removed from list!`);
+        vscode.window.showInformationMessage(
+          `Skill "${skill.name}" removed from list!`,
+        );
       }
     },
   );
@@ -815,7 +821,9 @@ export async function activate(context: vscode.ExtensionContext) {
         const existingPanel = openDetailPanels.get(selected.skill.id);
         if (existingPanel) {
           // 如果已打开，直接显示该页面
-          existingPanel.reveal(existingPanel.viewColumn || vscode.ViewColumn.One);
+          existingPanel.reveal(
+            existingPanel.viewColumn || vscode.ViewColumn.One,
+          );
           return;
         }
 
@@ -1024,12 +1032,12 @@ export async function activate(context: vscode.ExtensionContext) {
 </body>
 </html>
         `;
-        
+
         // 处理webview消息
         detailPanel.webview.onDidReceiveMessage(
-          async message => {
+          async (message) => {
             switch (message.command) {
-              case 'editSkill':
+              case "editSkill":
                 const editSkill = skillManager.getSkill(message.skillId);
                 if (editSkill) {
                   skillWebviewProvider.showSkillEditorPanel(editSkill);
@@ -1038,7 +1046,7 @@ export async function activate(context: vscode.ExtensionContext) {
             }
           },
           undefined,
-          context.subscriptions
+          context.subscriptions,
         );
       } else if (action.label === "编辑") {
         skillWebviewProvider.showSkillEditorPanel(selected.skill);
@@ -1087,14 +1095,14 @@ export async function activate(context: vscode.ExtensionContext) {
     "iflow.install",
     async () => {
       const isInstalled = await skillManager.checkIflowInstalled();
-      
+
       if (isInstalled) {
         const choice = await vscode.window.showInformationMessage(
           "iFlow CLI 已安装，是否需要重新安装？",
           "重新安装",
-          "取消"
+          "取消",
         );
-        
+
         if (choice !== "重新安装") {
           return;
         }
@@ -1102,10 +1110,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const openUrl = "https://cli.iflow.cn/?utm_source=isflower";
       await vscode.env.openExternal(vscode.Uri.parse(openUrl));
-      
+
       vscode.window.showInformationMessage(
         "已打开 iFlow CLI 官网，请按照页面提示进行安装。",
-        "OK"
+        "OK",
       );
     },
   );
@@ -1137,7 +1145,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push({
     dispose: () => {
       clearInterval(refreshInterval);
-    }
+    },
   });
 }
 

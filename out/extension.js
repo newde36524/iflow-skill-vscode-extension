@@ -60,7 +60,7 @@ async function activate(context) {
     const openDetailPanels = new Map();
     // Handle double-click on skill items to show details
     treeView.onDidChangeSelection(async (e) => {
-        if (e.selection.length === 1 && e.selection[0].contextValue === 'skill') {
+        if (e.selection.length === 1 && e.selection[0].contextValue === "skill") {
             const skillItem = e.selection[0];
             if (skillItem.id) {
                 // 保存 skillId 以避免 TypeScript 类型错误
@@ -261,7 +261,7 @@ async function activate(context) {
     <div class="header">
         <div class="header-left">
             <div class="title">${skill.name}</div>
-            <div class="skill-path">${skill.absolutePath || '未知路径'}</div>
+            <div class="skill-path">${skill.absolutePath || "未知路径"}</div>
         </div>
         <div class="button-group">
             <button class="btn-secondary" id="editBtn">编辑</button>
@@ -286,7 +286,7 @@ async function activate(context) {
                     // 处理webview消息
                     detailPanel.webview.onDidReceiveMessage(async (message) => {
                         switch (message.command) {
-                            case 'editSkill':
+                            case "editSkill":
                                 const editSkill = skillManager.getSkill(message.skillId);
                                 if (editSkill) {
                                     skillWebviewProvider.showSkillEditorPanel(editSkill);
@@ -336,7 +336,7 @@ async function activate(context) {
             const progressCallback = (message) => {
                 progress.report({ message: message });
             };
-            await skillManager.createSkill(projectName, "", projectPath, progressCallback);
+            await skillManager.createSkill(projectName, projectName, projectPath, progressCallback);
             progress.report({ increment: 100, message: "完成！" });
         });
         skillsTreeDataProvider.refresh();
@@ -388,11 +388,11 @@ async function activate(context) {
     const editSkillCommand = vscode.commands.registerCommand("iflow.editSkill", async (skillItem) => {
         const skill = skillManager.getSkill(skillItem.id);
         if (skill) {
-            console.log('编辑 skill - ID:', skill.id);
-            console.log('编辑 skill - name:', skill.name);
-            console.log('编辑 skill - absolutePath:', skill.absolutePath);
-            console.log('编辑 skill - projectPath:', skill.projectPath);
-            console.log('编辑 skill - isGlobal:', skill.isGlobal);
+            console.log("编辑 skill - ID:", skill.id);
+            console.log("编辑 skill - name:", skill.name);
+            console.log("编辑 skill - absolutePath:", skill.absolutePath);
+            console.log("编辑 skill - projectPath:", skill.projectPath);
+            console.log("编辑 skill - isGlobal:", skill.isGlobal);
             skillWebviewProvider.showSkillEditor(skill);
         }
     });
@@ -927,7 +927,7 @@ async function activate(context) {
             // 处理webview消息
             detailPanel.webview.onDidReceiveMessage(async (message) => {
                 switch (message.command) {
-                    case 'editSkill':
+                    case "editSkill":
                         const editSkill = skillManager.getSkill(message.skillId);
                         if (editSkill) {
                             skillWebviewProvider.showSkillEditorPanel(editSkill);
@@ -987,7 +987,7 @@ async function activate(context) {
     context.subscriptions.push({
         dispose: () => {
             clearInterval(refreshInterval);
-        }
+        },
     });
 }
 function deactivate() {

@@ -578,19 +578,27 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
   async importSkillToGlobal(skillId: string): Promise<ImportResult> {
     const skill = this.skills.get(skillId);
     if (!skill) {
+      console.error(`[importSkillToGlobal] Skill not found: ${skillId}`);
       return { success: false, error: "Skill not found" };
     }
 
     try {
       // Get global iflow skills directory path
       const globalSkillsDir = SkillManager.getIflowGlobalSkillsPath();
+      console.log(
+        `[importSkillToGlobal] Global skills directory: ${globalSkillsDir}`,
+      );
 
       if (!fs.existsSync(globalSkillsDir)) {
+        console.log(
+          `[importSkillToGlobal] Creating directory: ${globalSkillsDir}`,
+        );
         fs.mkdirSync(globalSkillsDir, { recursive: true });
       }
 
       const skillFileName = `${skill.name}.md`;
       const skillFilePath = path.join(globalSkillsDir, skillFileName);
+      console.log(`[importSkillToGlobal] Skill file path: ${skillFilePath}`);
 
       // Write skill content as markdown file with version marker
       const contentWithVersion = this.addVersionToContent(
@@ -598,6 +606,9 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         skill.version,
       );
       await fs.promises.writeFile(skillFilePath, contentWithVersion, "utf-8");
+      console.log(
+        `[importSkillToGlobal] Successfully wrote file: ${skillFilePath}`,
+      );
 
       // Update absolute path to point to global file
       skill.absolutePath = skillFilePath;
@@ -606,11 +617,15 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
       skill.globalVersion = skill.version;
       skill.syncStatus = "synced";
       await this.saveSkillToFile(skill);
+      console.log(
+        `[importSkillToGlobal] Successfully imported skill: ${skill.name}`,
+      );
 
       return { success: true };
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
+      console.error(`[importSkillToGlobal] Error importing skill:`, error);
       return { success: false, error: errorMessage };
     }
   }
