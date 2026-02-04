@@ -14,11 +14,8 @@ export class SkillsTreeItem extends vscode.TreeItem {
         
         if (skill) {
             this.id = skill.id;
-            // 显示绝对路径
-            const absolutePath = skill.absolutePath || path.join(skill.projectPath, `${skill.name}.md`);
-            this.tooltip = `${skill.description}\nPath: ${absolutePath}\nVersion: v${skill.version}\nStatus: ${skill.syncStatus}${skill.isGlobal ? '\nType: Global Skill' : ''}`;
             
-            // 检查当前工作区目录是否与技能匹配
+            // 保留原来的绿色圆点图标（根据是否匹配当前工作区）
             const currentWorkspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             const isMatch = currentWorkspaceFolder && (skill.projectPath === currentWorkspaceFolder || skill.projectPath.startsWith(currentWorkspaceFolder + path.sep));
             
@@ -31,27 +28,21 @@ export class SkillsTreeItem extends vscode.TreeItem {
                 this.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('terminal.ansiGreen'));
             }
             
-            // 添加描述信息
-            this.description = `v${skill.version}`;
-            
-            // 添加同步状态标签和类型标签
+            // 在 label 后面添加同步状态
             const statusLabels: Record<string, string> = {
                 'synced': '已同步',
                 'modified': '已修改',
                 'outdated': '待更新',
                 'new': '新建'
             };
-            this.description += ` · ${statusLabels[skill.syncStatus] || skill.syncStatus}`;
             
-            // 如果是全局技能，添加标识
-            if (skill.isGlobal) {
-                this.description += ' · [全局]';
-            }
+            const statusLabel = statusLabels[skill.syncStatus] || skill.syncStatus;
+            this.label = `${skill.name} - ${statusLabel}`;
             
-            // 如果匹配，添加 [当前项目] 标识
-            if (isMatch) {
-                this.description += ' · [当前项目]';
-            }
+            // 显示绝对路径和同步状态
+            const absolutePath = skill.absolutePath || path.join(skill.projectPath, `${skill.name}.md`);
+            
+            this.tooltip = `${skill.description}\n路径: ${absolutePath}\n版本: v${skill.version}\n全局版本: v${skill.globalVersion ?? '未同步'}\n状态: ${statusLabel}${skill.isGlobal ? '\n类型: 全局技能' : ''}`;
         } else {
             this.iconPath = new vscode.ThemeIcon('folder');
         }
@@ -61,6 +52,28 @@ export class SkillsTreeItem extends vscode.TreeItem {
 export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTreeItem> {
     private _onDidChangeTreeData = new vscode.EventEmitter<SkillsTreeItem | undefined | null | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+    /**
+     * 获取跨平台的 iflow 全局技能目录路径
+     */
+    private static getIflowGlobalSkillsPath(): string {
+      const config = vscode.workspace.getConfiguration("iflow");
+      const configPath = config.get<string>("globalSkillsPath");
+      if (configPath) {
+        return configPath;
+      }
+
+      const platform = process.platform;
+      let homeDir: string;
+
+      if (platform === 'win32') {
+        homeDir = process.env.USERPROFILE || process.env.HOME || '';
+      } else {
+        homeDir = process.env.HOME || '';
+      }
+
+      return require('path').join(homeDir, '.iflow', 'skills');
+    }
 
     constructor(private skillManager: SkillManager) {}
 
@@ -90,7 +103,7 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
             const items: SkillsTreeItem[] = [];
             
             // 首先添加全局技能分组
-            const globalSkillsPath = path.join(process.env.HOME || '', '.iflow', 'skills');
+            const globalSkillsPath = SkillsTreeDataProvider.getIflowGlobalSkillsPath();
             if (groupedSkills.has(globalSkillsPath)) {
                 items.push(
                     new SkillsTreeItem(

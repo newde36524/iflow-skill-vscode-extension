@@ -39,6 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SkillWebviewProvider = void 0;
 const vscode = __importStar(require("vscode"));
 const markdown_it_1 = __importDefault(require("markdown-it"));
+const path = __importStar(require("path"));
 class SkillWebviewProvider {
     constructor(_extensionUri, skillManager) {
         this._extensionUri = _extensionUri;
@@ -54,8 +55,32 @@ class SkillWebviewProvider {
         // We don't need to implement this for our use case
     }
     showSkillEditor(skill) {
+        // 确保 skill 对象有 absolutePath
+        if (!skill.absolutePath) {
+            const path = require('path');
+            skill.absolutePath = path.join(skill.projectPath, '.iflow', 'skills', `${skill.name}.md`);
+        }
         this.currentSkill = skill;
         this.showSkillEditorPanel(skill);
+    }
+    /**
+     * 获取跨平台的 iflow 全局技能目录路径
+     */
+    static getIflowGlobalSkillsPath() {
+        const config = vscode.workspace.getConfiguration("iflow");
+        const configPath = config.get("globalSkillsPath");
+        if (configPath) {
+            return configPath;
+        }
+        const platform = process.platform;
+        let homeDir;
+        if (platform === 'win32') {
+            homeDir = process.env.USERPROFILE || process.env.HOME || '';
+        }
+        else {
+            homeDir = process.env.HOME || '';
+        }
+        return path.join(homeDir, '.iflow', 'skills');
     }
     showSkillEditorPanel(skill) {
         if (this.currentPanel) {
@@ -92,17 +117,106 @@ class SkillWebviewProvider {
     async handleSave(content) {
         if (this.currentSkill) {
             this.currentSkill.content = content;
-            await this.skillManager.updateSkill(this.currentSkill);
-            // 同时保存到全局 ~/.iflow/skills/ 目录
-            const result = await this.skillManager.importSkillToGlobal(this.currentSkill.id);
-            if (result.success) {
-                vscode.window.showInformationMessage('Skill saved successfully!');
+            // 发送初始进度
+            this.currentPanel?.webview.postMessage({
+                command: 'updateSyncProgress',
+                progress: 0,
+                message: '开始保存...'
+            });
+            try {
+                // 优先保存修改信息到 skill 文件
+                this.currentPanel?.webview.postMessage({
+                    command: 'updateSyncProgress',
+                    progress: 20,
+                    message: '正在保存到 skill 文件...'
+                });
+                await this.skillManager.saveSkillToProject(this.currentSkill);
+                // 执行 iflow 命令创建或更新 skill
+                this.currentPanel?.webview.postMessage({
+                    command: 'updateSyncProgress',
+                    progress: 40,
+                    message: '正在执行 iflow 命令...'
+                });
+                const { exec } = require("child_process");
+                const command = `iflow -p "创建或更新 skill: ${this.currentSkill.name}"`;
+                await new Promise((resolve, reject) => {
+                    exec(command, (error, stdout, stderr) => {
+                        if (error) {
+                            console.error("Error executing iflow command:", error);
+                            console.error("stderr:", stderr);
+                            resolve();
+                        }
+                        else {
+                            console.log("iflow command output:", stdout);
+                            resolve();
+                        }
+                    });
+                });
+                // 更新 skill 信息
+                this.currentPanel?.webview.postMessage({
+                    command: 'updateSyncProgress',
+                    progress: 60,
+                    message: '正在更新 skill 信息...'
+                });
+                this.currentSkill.updatedAt = new Date().toISOString();
+                this.currentSkill.version += 1;
+                this.currentSkill.syncStatus = "modified";
+                // 更新内存中的 skill 对象
+                this.skillManager.updateSkillInMemory(this.currentSkill);
+                await this.skillManager.saveSkillToFilePublic(this.currentSkill);
+                // 同步到全局目录
+                this.currentPanel?.webview.postMessage({
+                    command: 'updateSyncProgress',
+                    progress: 80,
+                    message: '正在同步到全局目录...'
+                });
+                const result = await this.skillManager.importSkillToGlobal(this.currentSkill.id);
+                // 删除项目本地文件
+                this.currentPanel?.webview.postMessage({
+                    command: 'updateSyncProgress',
+                    progress: 90,
+                    message: '正在清理临时文件...'
+                });
+                await this.skillManager.deleteProjectLocalSkill(this.currentSkill.id);
+                // 完成
+                this.currentPanel?.webview.postMessage({
+                    command: 'updateSyncProgress',
+                    progress: 100,
+                    message: '完成！'
+                });
+                // 更新状态显示
+                this.currentPanel?.webview.postMessage({
+                    command: 'updateSyncStatus',
+                    status: 'synced',
+                    statusLabel: '已同步'
+                });
+                // 更新初始内容，以便后续编辑检测
+                this.currentPanel?.webview.postMessage({
+                    command: 'updateInitialContent',
+                    content: content
+                });
+                if (result.success) {
+                    vscode.window.showInformationMessage('Skill saved successfully!');
+                }
+                else {
+                    vscode.window.showWarningMessage(`Skill saved locally, but failed to save to global directory: ${result.error}`);
+                }
+                // 更新预览区域
+                this.updatePreview(content);
+                // 2秒后隐藏进度条
+                setTimeout(() => {
+                    this.currentPanel?.webview.postMessage({
+                        command: 'hideSyncProgress'
+                    });
+                }, 2000);
             }
-            else {
-                vscode.window.showWarningMessage(`Skill saved locally, but failed to save to global directory: ${result.error}`);
+            catch (error) {
+                console.error("Error saving skill:", error);
+                vscode.window.showErrorMessage(`保存失败: ${error}`);
+                this.currentPanel?.webview.postMessage({
+                    command: 'hideSyncProgress'
+                });
             }
-            // 更新预览区域
-            this.updatePreview(content);
         }
     }
     updatePreview(content) {
@@ -172,18 +286,27 @@ class SkillWebviewProvider {
             margin-bottom: 15px;
             padding-bottom: 10px;
             border-bottom: 1px solid var(--vscode-panel-border);
+            gap: 20px;
         }
 
         .header-left {
             display: flex;
             flex-direction: column;
             gap: 5px;
+            flex: 1;
+            min-width: 0;
         }
 
         .title {
             font-size: 24px;
             font-weight: bold;
             color: var(--vscode-foreground);
+        }
+
+        .skill-path {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            font-family: var(--vscode-editor-font-family);
         }
 
         .skill-meta {
@@ -202,6 +325,12 @@ class SkillWebviewProvider {
 
         .meta-label {
             font-weight: 600;
+        }
+
+        .meta-item.buttons {
+            margin-left: auto;
+            display: flex;
+            gap: 8px;
         }
 
         .status-badge {
@@ -241,16 +370,19 @@ class SkillWebviewProvider {
         .button-group {
             display: flex;
             gap: 10px;
+            align-items: center;
+            flex-shrink: 0;
         }
 
         button {
-            padding: 8px 16px;
+            padding: 6px 12px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 500;
             transition: background-color 0.2s;
+            white-space: nowrap;
         }
 
         .btn-primary {
@@ -413,6 +545,35 @@ class SkillWebviewProvider {
             color: var(--vscode-descriptionForeground);
         }
 
+        .sync-progress {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: var(--vscode-editor-selectionBackground);
+            border-radius: 4px;
+            border: 1px solid var(--vscode-panel-border);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: var(--vscode-editor-background);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background-color: var(--vscode-button-primaryBackground);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            font-size: 11px;
+            color: var(--vscode-descriptionForeground);
+        }
+
         .split-view {
             width: 100%;
         }
@@ -427,6 +588,7 @@ class SkillWebviewProvider {
     <div class="header">
         <div class="header-left">
             <div class="title">${this.escapeHtml(skill.name)}</div>
+            <div class="skill-path">${this.escapeHtml(skill.absolutePath || '未知路径')}</div>
             <div class="skill-meta">
                 <div class="meta-item">
                     <span class="meta-label">版本:</span>
@@ -440,11 +602,17 @@ class SkillWebviewProvider {
                     <span class="meta-label">状态:</span>
                     <span class="status-badge ${skill.syncStatus}">${statusLabels[skill.syncStatus] || skill.syncStatus}</span>
                 </div>
+                <div class="meta-item buttons">
+                    <button class="btn-secondary" id="previewBtn">隐藏预览</button>
+                    <button class="btn-secondary" id="saveBtn">保存</button>
+                </div>
             </div>
-        </div>
-        <div class="button-group">
-            <button class="btn-secondary" id="previewBtn">隐藏预览</button>
-            <button class="btn-secondary" id="saveBtn">保存</button>
+            <div class="sync-progress" id="syncProgress" style="display: none;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText">准备同步...</div>
+            </div>
         </div>
     </div>
     
@@ -469,8 +637,11 @@ class SkillWebviewProvider {
         const previewBtn = document.getElementById('previewBtn');
         const saveBtn = document.getElementById('saveBtn');
         const editorContainer = document.getElementById('editor-container');
+        const statusBadge = document.querySelector('.status-badge');
         
         let isSplitView = true;
+        let isModified = false;
+        const initialContent = editor.value;
         
         // Toggle preview
         previewBtn.addEventListener('click', () => {
@@ -525,6 +696,21 @@ class SkillWebviewProvider {
             });
             const renderedContent = md.render(editor.value);
             preview.innerHTML = renderedContent;
+            
+            // 检测内容是否被修改
+            if (editor.value !== initialContent && !isModified) {
+                isModified = true;
+                if (statusBadge) {
+                    statusBadge.className = 'status-badge modified';
+                    statusBadge.textContent = '已修改';
+                }
+            } else if (editor.value === initialContent && isModified) {
+                isModified = false;
+                if (statusBadge) {
+                    statusBadge.className = 'status-badge synced';
+                    statusBadge.textContent = '已同步';
+                }
+            }
         });
         
         // Handle messages from extension
@@ -532,6 +718,30 @@ class SkillWebviewProvider {
             const message = event.data;
             if (message.command === 'updatePreview') {
                 preview.innerHTML = message.content;
+            } else if (message.command === 'updateSyncProgress') {
+                const syncProgress = document.getElementById('syncProgress');
+                const progressFill = document.getElementById('progressFill');
+                const progressText = document.getElementById('progressText');
+                
+                if (syncProgress && progressFill && progressText) {
+                    syncProgress.style.display = 'block';
+                    progressFill.style.width = message.progress + '%';
+                    progressText.textContent = message.message;
+                }
+            } else if (message.command === 'hideSyncProgress') {
+                const syncProgress = document.getElementById('syncProgress');
+                if (syncProgress) {
+                    syncProgress.style.display = 'none';
+                }
+            } else if (message.command === 'updateSyncStatus') {
+                const statusBadge = document.querySelector('.status-badge');
+                if (statusBadge) {
+                    statusBadge.className = 'status-badge ' + message.status;
+                    statusBadge.textContent = message.statusLabel;
+                }
+            } else if (message.command === 'updateInitialContent') {
+                initialContent = message.content;
+                isModified = false;
             }
         });
     </script>

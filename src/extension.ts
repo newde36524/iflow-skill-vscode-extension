@@ -27,30 +27,52 @@ export async function activate(context: vscode.ExtensionContext) {
     showCollapseAll: true,
   });
 
+  // Track open detail panels by skill ID
+  const openDetailPanels = new Map<string, vscode.WebviewPanel>();
+
   // Handle double-click on skill items to show details
   treeView.onDidChangeSelection(async (e) => {
     if (e.selection.length === 1 && e.selection[0].contextValue === 'skill') {
       const skillItem = e.selection[0];
       if (skillItem.id) {
-        const skill = skillManager.getSkill(skillItem.id);
+        // 保存 skillId 以避免 TypeScript 类型错误
+        const skillId = skillItem.id;
+        // 从文件中读取最新的 skill 内容
+        const skill = await skillManager.readSkillFromFile(skillId);
         if (skill) {
-        // 显示技能详情
-        const statusLabels: Record<string, string> = {
-          synced: "已同步",
-          modified: "已修改",
-          outdated: "待更新",
-          new: "新建",
-        };
+          // 检查是否已有打开的详情页面
+          const existingPanel = openDetailPanels.get(skillId);
+          if (existingPanel) {
+            // 如果已打开，直接显示该页面
+            existingPanel.reveal(existingPanel.viewColumn || vscode.ViewColumn.One);
+            return;
+          }
 
-        const detailPanel = vscode.window.createWebviewPanel(
-          "iflowSkillDetail",
-          `Skill Details: ${skill.name}`,
-          vscode.ViewColumn.One,
-          {
-            enableScripts: true,
-            retainContextWhenHidden: true,
-          },
-        );
+          // 显示技能详情
+          const statusLabels: Record<string, string> = {
+            synced: "已同步",
+            modified: "已修改",
+            outdated: "待更新",
+            new: "新建",
+          };
+
+          const detailPanel = vscode.window.createWebviewPanel(
+            "iflowSkillDetail",
+            `Skill Details: ${skill.name}`,
+            vscode.ViewColumn.One,
+            {
+              enableScripts: true,
+              retainContextWhenHidden: true,
+            },
+          );
+
+          // 保存到已打开面板Map中
+          openDetailPanels.set(skillId, detailPanel);
+
+          // 当面板关闭时，从Map中移除
+          detailPanel.onDidDispose(() => {
+            openDetailPanels.delete(skillId);
+          });
 
         detailPanel.webview.html = `
 <!DOCTYPE html>
@@ -75,51 +97,74 @@ export async function activate(context: vscode.ExtensionContext) {
             width: 100%;
             margin: 0;
         }
-        
-        /* 按钮容器 */
-        .button-container {
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            gap: 20px;
+        }
+
+        .header-left {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--vscode-foreground);
+            margin: 0;
+        }
+
+        .skill-path {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            font-family: var(--vscode-editor-font-family);
+        }
+
+        .button-group {
             display: flex;
             gap: 10px;
-            margin: 15px 0;
-            padding: 10px 0;
-            border-bottom: 1px solid var(--vscode-panel-border);
+            align-items: center;
+            flex-shrink: 0;
         }
-        
+
         button {
-            padding: 8px 16px;
+            padding: 6px 12px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 500;
             transition: background-color 0.2s;
+            white-space: nowrap;
         }
-        
+
         .btn-primary {
             background-color: var(--vscode-button-primaryBackground);
             color: var(--vscode-button-primaryForeground);
         }
-        
+
         .btn-primary:hover {
             background-color: var(--vscode-button-primaryHoverBackground);
         }
-        
+
         .btn-success {
             background-color: #4ec9b0;
             color: #1e1e1e;
         }
-        
+
         .btn-success:hover {
             background-color: #3db892;
         }
-        
-        h1 {
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 20px;
-            border-bottom: 1px solid var(--vscode-panel-border);
-            padding-bottom: 10px;
-        }
+
         h2 {
             font-size: 18px;
             font-weight: bold;
@@ -195,10 +240,14 @@ export async function activate(context: vscode.ExtensionContext) {
     </style>
 </head>
 <body>
-    <h1>${skill.name}</h1>
-    
-    <div class="button-container">
-        <button class="btn-secondary" id="editBtn">编辑</button>
+    <div class="header">
+        <div class="header-left">
+            <div class="title">${skill.name}</div>
+            <div class="skill-path">${skill.absolutePath || '未知路径'}</div>
+        </div>
+        <div class="button-group">
+            <button class="btn-secondary" id="editBtn">编辑</button>
+        </div>
     </div>
     
     <div class="content-preview">${skill.content}</div>
@@ -257,29 +306,46 @@ export async function activate(context: vscode.ExtensionContext) {
       const projectPath = folderUri[0].fsPath;
       const projectName = path.basename(projectPath);
 
-      const skillName = await vscode.window.showInputBox({
-        prompt: "Enter skill name",
-        placeHolder: projectName,
-        value: projectName,
-      });
+      // 直接使用文件夹名称作为技能名称，显示确认对话框
+      const confirm = await vscode.window.showInformationMessage(
+        `确认为文件夹 "${projectName}" 创建 Skill 吗？`,
+        { modal: true },
+        "确认"
+      );
 
-      if (!skillName) {
+      if (!confirm) {
         return;
       }
 
-      const skillDescription = await vscode.window.showInputBox({
-        prompt: "Enter skill description",
-        placeHolder: `Skill for ${projectName}`,
-      });
+      // 使用进度窗口显示创建过程
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `正在创建 Skill: ${projectName}`,
+          cancellable: false,
+        },
+        async (progress) => {
+          progress.report({ increment: 0, message: "准备创建..." });
 
-      if (!skillDescription) {
-        return;
-      }
+          // 定义进度回调函数
+          const progressCallback = (message: string) => {
+            progress.report({ message: message });
+          };
 
-      await skillManager.createSkill(skillName, skillDescription, projectPath);
+          await skillManager.createSkill(
+            projectName,
+            "",
+            projectPath,
+            progressCallback,
+          );
+
+          progress.report({ increment: 100, message: "完成！" });
+        }
+      );
+
       skillsTreeDataProvider.refresh();
       vscode.window.showInformationMessage(
-        `Skill "${skillName}" created successfully!`,
+        `Skill "${projectName}" created successfully!`,
       );
     },
   );
@@ -433,9 +499,18 @@ export async function activate(context: vscode.ExtensionContext) {
   const viewSkillDetailCommand = vscode.commands.registerCommand(
     "iflow.viewSkillDetail",
     async (skillItem) => {
-      const skill = skillManager.getSkill(skillItem.id);
+      // 从文件中读取最新的 skill 内容
+      const skill = await skillManager.readSkillFromFile(skillItem.id);
       if (!skill) {
         vscode.window.showErrorMessage("Skill not found!");
+        return;
+      }
+
+      // 检查是否已有打开的详情页面
+      const existingPanel = openDetailPanels.get(skillItem.id);
+      if (existingPanel) {
+        // 如果已打开，直接显示该页面
+        existingPanel.reveal(existingPanel.viewColumn || vscode.ViewColumn.One);
         return;
       }
 
@@ -455,6 +530,14 @@ export async function activate(context: vscode.ExtensionContext) {
           retainContextWhenHidden: true,
         },
       );
+
+      // 保存到已打开面板Map中
+      openDetailPanels.set(skillItem.id, detailPanel);
+
+      // 当面板关闭时，从Map中移除
+      detailPanel.onDidDispose(() => {
+        openDetailPanels.delete(skillItem.id);
+      });
 
       detailPanel.webview.html = `
         <!DOCTYPE html>
@@ -708,8 +791,20 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       if (action.label === "查看详情") {
-        // 显示技能详情
-        const skill = selected.skill;
+        // 显示技能详情 - 从文件中读取最新内容
+        const skill = await skillManager.readSkillFromFile(selected.skill.id);
+        if (!skill) {
+          vscode.window.showErrorMessage("无法读取 skill 文件！");
+          return;
+        }
+
+        // 检查是否已有打开的详情页面
+        const existingPanel = openDetailPanels.get(selected.skill.id);
+        if (existingPanel) {
+          // 如果已打开，直接显示该页面
+          existingPanel.reveal(existingPanel.viewColumn || vscode.ViewColumn.One);
+          return;
+        }
 
         const detailPanel = vscode.window.createWebviewPanel(
           "iflowSkillDetail",
@@ -720,6 +815,14 @@ export async function activate(context: vscode.ExtensionContext) {
             retainContextWhenHidden: true,
           },
         );
+
+        // 保存到已打开面板Map中
+        openDetailPanels.set(selected.skill.id, detailPanel);
+
+        // 当面板关闭时，从Map中移除
+        detailPanel.onDidDispose(() => {
+          openDetailPanels.delete(selected.skill.id);
+        });
 
         detailPanel.webview.html = `
 <!DOCTYPE html>
@@ -744,51 +847,74 @@ export async function activate(context: vscode.ExtensionContext) {
             width: 100%;
             margin: 0;
         }
-        
-        /* 按钮容器 */
-        .button-container {
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            gap: 20px;
+        }
+
+        .header-left {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--vscode-foreground);
+            margin: 0;
+        }
+
+        .skill-path {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            font-family: var(--vscode-editor-font-family);
+        }
+
+        .button-group {
             display: flex;
             gap: 10px;
-            margin: 15px 0;
-            padding: 10px 0;
-            border-bottom: 1px solid var(--vscode-panel-border);
+            align-items: center;
+            flex-shrink: 0;
         }
-        
+
         button {
-            padding: 8px 16px;
+            padding: 6px 12px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 500;
             transition: background-color 0.2s;
+            white-space: nowrap;
         }
-        
+
         .btn-primary {
             background-color: var(--vscode-button-primaryBackground);
             color: var(--vscode-button-primaryForeground);
         }
-        
+
         .btn-primary:hover {
             background-color: var(--vscode-button-primaryHoverBackground);
         }
-        
+
         .btn-success {
             background-color: #4ec9b0;
             color: #1e1e1e;
         }
-        
+
         .btn-success:hover {
             background-color: #3db892;
         }
-        
-        h1 {
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 20px;
-            border-bottom: 1px solid var(--vscode-panel-border);
-            padding-bottom: 10px;
-        }
+
         h2 {
             font-size: 18px;
             font-weight: bold;

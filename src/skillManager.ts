@@ -27,6 +27,32 @@ export class SkillManager {
   private globalSkillsPath: string;
   private skills: Map<string, Skill> = new Map();
 
+  /**
+   * 获取跨平台的 iflow 全局技能目录路径
+   */
+  private static getIflowGlobalSkillsPath(): string {
+    const config = vscode.workspace.getConfiguration("iflow");
+    // 优先使用配置中的路径
+    const configPath = config.get<string>("globalSkillsPath");
+    if (configPath) {
+      return configPath;
+    }
+
+    // 根据不同操作系统确定默认路径
+    const platform = process.platform;
+    let homeDir: string;
+
+    if (platform === "win32") {
+      // Windows: %USERPROFILE%\.iflow\skills
+      homeDir = process.env.USERPROFILE || process.env.HOME || "";
+    } else {
+      // macOS/Linux: ~/.iflow/skills
+      homeDir = process.env.HOME || "";
+    }
+
+    return path.join(homeDir, ".iflow", "skills");
+  }
+
   constructor(private context: vscode.ExtensionContext) {
     this.skillsPath = path.join(context.globalStorageUri.fsPath, "skills");
     this.globalSkillsPath = path.join(
@@ -81,10 +107,7 @@ export class SkillManager {
   }
 
   private loadGlobalSkills() {
-    const config = vscode.workspace.getConfiguration("iflow");
-    const globalSkillsDir =
-      config.get<string>("globalSkillsPath") ||
-      path.join(process.env.HOME || "", ".iflow", "skills");
+    const globalSkillsDir = SkillManager.getIflowGlobalSkillsPath();
 
     if (!fs.existsSync(globalSkillsDir)) {
       return;
@@ -207,17 +230,31 @@ export class SkillManager {
     name: string,
     description: string,
     projectPath: string,
+    progressCallback?: (message: string) => void,
   ): Promise<void> {
+    if (progressCallback) {
+      progressCallback(`正在生成技能 ID...`);
+    }
+
     const id = this.generateId(name, projectPath);
+
+    // 生成技能内容
+    const content = await this.generateSkillContentUsingSkillCreator(
+      name,
+      description,
+      projectPath,
+      progressCallback,
+    );
+
+    if (progressCallback) {
+      progressCallback(`正在创建技能对象...`);
+    }
+
     const skill: Skill = {
       id,
       name,
       description,
-      content: await this.generateSkillContentUsingSkillCreator(
-        name,
-        description,
-        projectPath,
-      ),
+      content,
       projectPath,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -225,8 +262,16 @@ export class SkillManager {
       syncStatus: "new",
     };
 
+    if (progressCallback) {
+      progressCallback(`正在保存技能文件...`);
+    }
+
     this.skills.set(id, skill);
     await this.saveSkillToFile(skill);
+
+    if (progressCallback) {
+      progressCallback(`技能创建完成！`);
+    }
   }
 
   private generateId(name: string, projectPath: string): string {
@@ -250,6 +295,7 @@ export class SkillManager {
     name: string,
     description: string,
     projectPath: string,
+    progressCallback?: (message: string) => void,
   ): Promise<string> {
     const projectName = path.basename(projectPath);
 
@@ -272,6 +318,10 @@ Format the output as a markdown file ready to be used as an iFlow skill.`;
 
     try {
       // 调用 iFlow CLI 的 skill-creator 技能
+      if (progressCallback) {
+        progressCallback(`正在调用 skill-creator 技能生成内容...`);
+      }
+
       const { exec } = require("child_process");
       return new Promise((resolve, reject) => {
         exec(
@@ -280,14 +330,23 @@ Format the output as a markdown file ready to be used as an iFlow skill.`;
             if (error) {
               console.error("Error calling skill-creator:", error);
               console.error("stderr:", stderr);
+              if (progressCallback) {
+                progressCallback(`skill-creator 调用失败，使用默认模板...`);
+              }
               // 如果 skill-creator 调用失败，回退到默认模板
               resolve(
                 this.generateDefaultTemplate(name, description, projectPath),
               );
             } else if (stdout && stdout.trim()) {
+              if (progressCallback) {
+                progressCallback(`技能内容生成成功！`);
+              }
               resolve(stdout.trim());
             } else {
               console.error("No output from skill-creator");
+              if (progressCallback) {
+                progressCallback(`skill-creator 无输出，使用默认模板...`);
+              }
               resolve(
                 this.generateDefaultTemplate(name, description, projectPath),
               );
@@ -297,6 +356,9 @@ Format the output as a markdown file ready to be used as an iFlow skill.`;
       });
     } catch (error) {
       console.error("Failed to use skill-creator:", error);
+      if (progressCallback) {
+        progressCallback(`skill-creator 执行失败，使用默认模板...`);
+      }
       return this.generateDefaultTemplate(name, description, projectPath);
     }
   }
@@ -340,24 +402,73 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
     await this.saveSkillToProject(skill);
   }
 
-  private async saveSkillToProject(skill: Skill): Promise<void> {
+  public async saveSkillToProject(skill: Skill): Promise<void> {
     try {
       const projectSkillsDir = path.join(skill.projectPath, ".iflow", "skills");
       if (!fs.existsSync(projectSkillsDir)) {
         fs.mkdirSync(projectSkillsDir, { recursive: true });
       }
 
-      const skillFilePath = path.join(projectSkillsDir, `${skill.name}.md`);
+      // 使用时间戳确保文件名唯一，避免与已有文件冲突
+      const timestamp = Date.now();
+      const skillFileName = `${skill.name}_${timestamp}.md`;
+      const skillFilePath = path.join(projectSkillsDir, skillFileName);
+
       const contentWithVersion = this.addVersionToContent(
         skill.content,
         skill.version,
       );
       await fs.promises.writeFile(skillFilePath, contentWithVersion, "utf-8");
-      
+
       // 更新绝对路径
       skill.absolutePath = skillFilePath;
     } catch (error) {
       console.error(`Failed to save skill to project: ${error}`);
+    }
+  }
+
+  public async deleteProjectLocalSkill(skillId: string): Promise<void> {
+    const skill = this.skills.get(skillId);
+    if (skill && skill.absolutePath) {
+      try {
+        // 删除项目本地的 skill 文件
+        if (fs.existsSync(skill.absolutePath)) {
+          await fs.promises.unlink(skill.absolutePath);
+          console.log(
+            `Deleted project local skill file: ${skill.absolutePath}`,
+          );
+        }
+
+        // 检查并删除空的 .iflow/skills 目录
+        const projectSkillsDir = path.join(
+          skill.projectPath,
+          ".iflow",
+          "skills",
+        );
+        if (fs.existsSync(projectSkillsDir)) {
+          const files = fs.readdirSync(projectSkillsDir);
+          if (files.length === 0) {
+            await fs.promises.rmdir(projectSkillsDir);
+            console.log(
+              `Deleted empty project skills directory: ${projectSkillsDir}`,
+            );
+
+            // 检查并删除空的 .iflow 目录
+            const projectIflowDir = path.join(skill.projectPath, ".iflow");
+            if (fs.existsSync(projectIflowDir)) {
+              const iflowFiles = fs.readdirSync(projectIflowDir);
+              if (iflowFiles.length === 0) {
+                await fs.promises.rmdir(projectIflowDir);
+                console.log(
+                  `Deleted empty .iflow directory: ${projectIflowDir}`,
+                );
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Failed to delete project local skill file: ${error}`);
+      }
     }
   }
 
@@ -455,10 +566,7 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
 
     try {
       // Get global iflow skills directory path
-      const config = vscode.workspace.getConfiguration("iflow");
-      const globalSkillsDir =
-        config.get<string>("globalSkillsPath") ||
-        path.join(process.env.HOME || "", ".iflow", "skills");
+      const globalSkillsDir = SkillManager.getIflowGlobalSkillsPath();
 
       if (!fs.existsSync(globalSkillsDir)) {
         fs.mkdirSync(globalSkillsDir, { recursive: true });
@@ -473,6 +581,9 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         skill.version,
       );
       await fs.promises.writeFile(skillFilePath, contentWithVersion, "utf-8");
+
+      // Update absolute path to point to global file
+      skill.absolutePath = skillFilePath;
 
       // Update sync status
       skill.globalVersion = skill.version;
@@ -524,10 +635,7 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
   async readGlobalSkill(
     skillName: string,
   ): Promise<{ exists: boolean; content?: string; version?: number }> {
-    const config = vscode.workspace.getConfiguration("iflow");
-    const globalSkillsDir =
-      config.get<string>("globalSkillsPath") ||
-      path.join(process.env.HOME || "", ".iflow", "skills");
+    const globalSkillsDir = SkillManager.getIflowGlobalSkillsPath();
     const skillFilePath = path.join(globalSkillsDir, `${skillName}.md`);
 
     if (!fs.existsSync(skillFilePath)) {
@@ -567,5 +675,30 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
     return this.getAllSkills().filter(
       (skill) => skill.projectPath === projectPath,
     );
+  }
+
+  updateSkillInMemory(skill: Skill): void {
+    if (skill.id && this.skills.has(skill.id)) {
+      this.skills.set(skill.id, skill);
+    }
+  }
+
+  async readSkillFromFile(skillId: string): Promise<Skill | null> {
+    const skill = this.skills.get(skillId);
+    if (!skill || !skill.absolutePath) {
+      return null;
+    }
+
+    try {
+      const content = await fs.promises.readFile(skill.absolutePath, "utf-8");
+      // 返回更新了内容的 skill 对象
+      return {
+        ...skill,
+        content: content,
+      };
+    } catch (error) {
+      console.error(`Failed to read skill from file: ${error}`);
+      return null;
+    }
   }
 }
