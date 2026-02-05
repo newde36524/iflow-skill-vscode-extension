@@ -635,10 +635,10 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         }
     }
     // 从 SkillMap 技能市场搜索技能
-    async searchSkillsFromSkillMap(query, limit = 5) {
+    async searchSkillsFromSkillMap(query, limit = 5, page = 1) {
         try {
             // 使用 SkillMap 官方 API
-            const apiUrl = `https://skillmaps.net/v1/skills?q=${encodeURIComponent(query)}&sort=stars&page=1&limit=${limit}`;
+            const apiUrl = `https://skillmaps.net/v1/skills?q=${encodeURIComponent(query)}&sort=stars&page=${page}&limit=${limit}`;
             const response = await fetch(apiUrl, {
                 headers: {
                     Accept: "application/json",
@@ -681,9 +681,9 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         }
     }
     // 在线搜索技能
-    async searchSkillsOnline(query, sortBy = "popular", limit = 5) {
+    async searchSkillsOnline(query, sortBy = "popular", limit = 5, page = 1) {
         // 使用 SkillMap API 搜索技能
-        return await this.searchSkillsFromSkillMap(query, limit);
+        return await this.searchSkillsFromSkillMap(query, limit, page);
     }
     // 从 GitHub 下载整个仓库并安装技能到全局
     async installSkillFromGitHub(githubUrl, skillName, progressCallback) {

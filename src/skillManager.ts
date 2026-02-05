@@ -770,10 +770,11 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
   async searchSkillsFromSkillMap(
     query: string,
     limit: number = 5,
+    page: number = 1,
   ): Promise<OnlineSkill[]> {
     try {
       // 使用 SkillMap 官方 API
-      const apiUrl = `https://skillmaps.net/v1/skills?q=${encodeURIComponent(query)}&sort=stars&page=1&limit=${limit}`;
+      const apiUrl = `https://skillmaps.net/v1/skills?q=${encodeURIComponent(query)}&sort=stars&page=${page}&limit=${limit}`;
 
       const response = await fetch(apiUrl, {
         headers: {
@@ -832,9 +833,10 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
     query: string,
     sortBy: "latest" | "popular" = "popular",
     limit: number = 5,
+    page: number = 1,
   ): Promise<OnlineSkill[]> {
     // 使用 SkillMap API 搜索技能
-    return await this.searchSkillsFromSkillMap(query, limit);
+    return await this.searchSkillsFromSkillMap(query, limit, page);
   }
 
   // 从 GitHub 下载整个仓库并安装技能到全局

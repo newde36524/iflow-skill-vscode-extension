@@ -39,10 +39,17 @@ export class SkillsTreeItem extends vscode.TreeItem {
             const statusLabel = statusLabels[skill.syncStatus] || skill.syncStatus;
             this.label = `${skill.name} - ${statusLabel}`;
             
-            // 显示绝对路径和同步状态
+            // 显示技能介绍信息作为 tooltip
+            const description = skill.description || '暂无描述';
             const absolutePath = skill.absolutePath || path.join(skill.projectPath, `${skill.name}.md`);
             
-            this.tooltip = `${skill.description}\n路径: ${absolutePath}\n版本: v${skill.version}\n全局版本: v${skill.globalVersion ?? '未同步'}\n状态: ${statusLabel}${skill.isGlobal ? '\n类型: 全局技能' : ''}`;
+            this.tooltip = `📝 ${description}
+
+📂 路径: ${absolutePath}
+📦 版本: v${skill.version}
+🌍 全局版本: v${skill.globalVersion ?? '未同步'}
+📊 状态: ${statusLabel}
+${skill.isGlobal ? '🌟 类型: 全局技能' : '🔹 类型: 本地技能'}`;
         } else {
             this.iconPath = new vscode.ThemeIcon('folder');
         }

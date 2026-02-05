@@ -84,7 +84,7 @@ class SkillSearchProvider {
             }
         }, undefined, void 0);
     }
-    async handleSearch(query, sortBy, dataSource) {
+    async handleSearch(query, sortBy, dataSource, page = 1) {
         try {
             this.currentPanel?.webview.postMessage({
                 command: "updateLoading",
@@ -95,7 +95,8 @@ class SkillSearchProvider {
                 const config = vscode.workspace.getConfiguration("iflow");
                 await config.update("skillDataSource", dataSource, true);
             }
-            const skills = await this.skillManager.searchSkillsOnline(query, sortBy, 5);
+            const skills = await this.skillManager.searchSkillsOnline(query, sortBy, 10, // 每页显示10个
+            page);
             // 检查哪些技能已安装
             const installedSkills = skills
                 .map(skill => {
@@ -107,6 +108,8 @@ class SkillSearchProvider {
                 command: "updateResults",
                 skills: skills,
                 installedSkills: installedSkills,
+                page: page,
+                hasMore: skills.length === 10, // 如果返回的数量等于请求的数量，可能还有更多
             });
         }
         catch (error) {
@@ -202,49 +205,66 @@ class SkillSearchProvider {
     }
     getDetailWebviewContent(skill, webview) {
         const rawData = skill.rawData || {};
-        const authorAvatar = rawData.author_avatar || "";
+        // 确保使用正确的数据字段
+        const name = skill.name || rawData.name || 'Unknown';
+        const author = skill.repository || rawData.author || 'Unknown';
+        const description = skill.description || rawData.description || rawData.description_cn || '暂无描述';
+        const githubUrl = skill.url || rawData.github_url || '';
+        const stars = skill.stars || rawData.stars || 0;
+        const forks = skill.forks || rawData.forks || 0;
+        const authorAvatar = rawData.author_avatar || '';
         const downloads = rawData.downloads || 0;
         const views = rawData.views || 0;
-        const categoryName = rawData.category_name || "";
-        const subtagName = rawData.subtagName || "";
-        const descriptionCn = rawData.description_cn || "";
-        const description = rawData.description || "";
+        const categoryName = rawData.category_name || rawData.categoryName || '';
+        const subtagName = rawData.subtag_name || rawData.subtagName || '';
+        const updatedAt = skill.updatedAt ? new Date(skill.updatedAt).toLocaleDateString('zh-CN') :
+            (rawData.updated_at ? new Date(rawData.updated_at * 1000).toLocaleDateString('zh-CN') : 'Unknown');
         return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Skill Details: ${skill.name}</title>
+    <title>Skill Details: ${name}</title>
     <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
         body {
             font-family: var(--vscode-font-family);
             font-size: var(--vscode-font-size);
             color: var(--vscode-foreground);
             background-color: var(--vscode-editor-background);
-            padding: 20px;
-            margin: 0;
-            width: 100%;
-            box-sizing: border-box;
+            padding: 24px;
             line-height: 1.6;
         }
-        html {
-            width: 100%;
-            margin: 0;
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
         }
 
         .header {
             display: flex;
+            align-items: flex-start;
             gap: 20px;
-            margin-bottom: 25px;
+            margin-bottom: 30px;
             padding-bottom: 20px;
             border-bottom: 1px solid var(--vscode-panel-border);
         }
 
         .avatar {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
+            width: 72px;
+            height: 72px;
+            border-radius: 12px;
             flex-shrink: 0;
+            background-color: var(--vscode-button-secondaryBackground);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
         }
 
         .header-info {
@@ -252,10 +272,11 @@ class SkillSearchProvider {
         }
 
         .title {
-            font-size: 28px;
-            font-weight: bold;
+            font-size: 32px;
+            font-weight: 700;
             color: var(--vscode-foreground);
-            margin-bottom: 8px;
+            margin-bottom: 12px;
+            letter-spacing: -0.5px;
         }
 
         .author {
@@ -267,189 +288,259 @@ class SkillSearchProvider {
         .author a {
             color: var(--vscode-textLink-foreground);
             text-decoration: none;
+            font-weight: 500;
         }
 
         .author a:hover {
             text-decoration: underline;
         }
 
-        .data-source {
-            font-size: 13px;
-            color: var(--vscode-descriptionForeground);
-            margin-bottom: 15px;
+        .badges {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 8px;
         }
 
-        .data-source-badge {
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
             background-color: var(--vscode-button-secondaryBackground);
             color: var(--vscode-button-secondaryForeground);
-            padding: 2px 8px;
-            border-radius: 3px;
+        }
+
+        .badge-primary {
+            background-color: rgba(78, 201, 176, 0.15);
+            color: #4ec9b0;
+        }
+
+        .github-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 13px;
             font-weight: 500;
+            transition: background-color 0.2s;
+            margin-right: 10px;
+        }
+
+        .github-link:hover {
+            background-color: var(--vscode-button-secondaryHoverBackground);
+        }
+
+        .github-icon {
+            font-size: 16px;
         }
 
         .button-group {
             display: flex;
             gap: 10px;
-            flex-wrap: wrap;
+            margin-top: 16px;
         }
 
-        button {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-            transition: background-color 0.2s;
-            white-space: nowrap;
-        }
-
-        .btn-primary {
+        .install-btn {
+            padding: 10px 20px;
             background-color: var(--vscode-button-primaryBackground);
             color: var(--vscode-button-primaryForeground);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s;
         }
 
-        .btn-primary:hover {
+        .install-btn:hover {
             background-color: var(--vscode-button-primaryHoverBackground);
         }
 
-        .btn-secondary {
+        .close-btn {
+            padding: 10px 20px;
             background-color: var(--vscode-button-secondaryBackground);
             color: var(--vscode-button-secondaryForeground);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background-color 0.2s;
         }
 
-        .btn-secondary:hover {
+        .close-btn:hover {
             background-color: var(--vscode-button-secondaryHoverBackground);
         }
 
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 25px;
-        }
-
-        .info-card {
+        .description-section {
+            margin: 30px 0;
+            padding: 20px;
             background-color: var(--vscode-textCodeBlock-background);
-            padding: 15px;
-            border-radius: 6px;
-            border: 1px solid var(--vscode-panel-border);
-        }
-
-        .info-card-label {
-            font-size: 12px;
-            color: var(--vscode-descriptionForeground);
-            margin-bottom: 5px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .info-card-value {
-            font-size: 18px;
-            font-weight: 600;
-            color: var(--vscode-foreground);
-        }
-
-        .content-section {
-            margin-top: 25px;
+            border-radius: 8px;
+            border-left: 4px solid var(--vscode-textLink-foreground);
         }
 
         .section-title {
-            font-size: 18px;
-            font-weight: bold;
-            color: var(--vscode-textLink-foreground);
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid var(--vscode-panel-border);
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--vscode-descriptionForeground);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
         }
 
         .description {
+            font-size: 15px;
+            line-height: 1.7;
+            color: var(--vscode-foreground);
+            white-space: pre-wrap;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-top: 30px;
+        }
+
+        .stat-card {
+            padding: 20px;
+            background-color: var(--vscode-textCodeBlock-background);
+            border-radius: 8px;
+            border: 1px solid var(--vscode-panel-border);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--vscode-descriptionForeground);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--vscode-foreground);
+            line-height: 1.2;
+        }
+
+        .stat-value.large {
+            font-size: 32px;
+        }
+
+        .meta-section {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: var(--vscode-textCodeBlock-background);
+            border-radius: 8px;
+            border: 1px solid var(--vscode-panel-border);
+        }
+
+        .meta-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--vscode-panel-border);
+        }
+
+        .meta-row:last-child {
+            border-bottom: none;
+        }
+
+        .meta-label {
+            font-size: 14px;
+            color: var(--vscode-descriptionForeground);
+        }
+
+        .meta-value {
             font-size: 14px;
             color: var(--vscode-foreground);
-            line-height: 1.8;
-            margin-bottom: 15px;
-        }
-
-        .tags {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-top: 10px;
-        }
-
-        .tag {
-            background-color: var(--vscode-button-secondaryBackground);
-            color: var(--vscode-button-secondaryForeground);
-            padding: 4px 12px;
-            border-radius: 3px;
-            font-size: 12px;
+            font-weight: 500;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        \${authorAvatar ? \`<img src="\${authorAvatar}" class="avatar" alt="Author Avatar" />\` : ''}
-        <div class="header-info">
-            <div class="title">\${this.escapeHtml(skill.name)}</div>
-            <div class="author">
-                作者: <a href="https://github.com/\${this.escapeHtml(skill.repository)}" target="_blank">@\${this.escapeHtml(skill.repository)}</a>
+    <div class="container">
+        <div class="header">
+            ${authorAvatar ?
+            `<img src="${authorAvatar}" class="avatar" alt="${author}" />` :
+            `<div class="avatar">${name.charAt(0).toUpperCase()}</div>`}
+            <div class="header-info">
+                <h1 class="title">${name}</h1>
+                <div class="author">
+                    <a href="https://github.com/${author}" target="_blank">by ${author}</a>
+                </div>
+                <div class="badges">
+                    ${categoryName ? `<span class="badge">${categoryName}</span>` : ''}
+                    ${subtagName ? `<span class="badge">${subtagName}</span>` : ''}
+                    <span class="badge badge-primary">SkillMap 市场</span>
+                </div>
+                <div class="button-group">
+                    ${githubUrl ?
+            `<a href="${githubUrl}" target="_blank" class="github-link">
+                            <span class="github-icon">🔗</span> GitHub
+                        </a>` : ''}
+                    <button class="install-btn" onclick="window.location.reload()">关闭</button>
+                </div>
             </div>
-            <div class="data-source">
-                📍 来源: <span class="data-source-badge">SkillMap 市场</span>
+        </div>
+
+        <div class="description-section">
+            <div class="section-title">描述</div>
+            <div class="description">${description}</div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">⭐ Stars</div>
+                <div class="stat-value large">${stars.toLocaleString()}</div>
             </div>
-            <div class="button-group">
-                <button class="btn-primary" id="installBtn">安装</button>
-                <button class="btn-secondary" id="closeBtn">关闭</button>
+            <div class="stat-card">
+                <div class="stat-label">🍴 Forks</div>
+                <div class="stat-value">${forks.toLocaleString()}</div>
+            </div>
+            ${downloads > 0 ? `
+            <div class="stat-card">
+                <div class="stat-label">⬇️ Downloads</div>
+                <div class="stat-value">${downloads.toLocaleString()}</div>
+            </div>` : ''}
+            ${views > 0 ? `
+            <div class="stat-card">
+                <div class="stat-label">👁️ Views</div>
+                <div class="stat-value">${views.toLocaleString()}</div>
+            </div>` : ''}
+        </div>
+
+        <div class="meta-section">
+            <div class="section-title">元数据</div>
+            <div class="meta-row">
+                <div class="meta-label">更新时间</div>
+                <div class="meta-value">${updatedAt}</div>
+            </div>
+            ${categoryName ? `
+            <div class="meta-row">
+                <div class="meta-label">分类</div>
+                <div class="meta-value">${categoryName}</div>
+            </div>` : ''}
+            ${subtagName ? `
+            <div class="meta-row">
+                <div class="meta-label">子标签</div>
+                <div class="meta-value">${subtagName}</div>
+            </div>` : ''}
+            <div class="meta-row">
+                <div class="meta-label">Skill ID</div>
+                <div class="meta-value" style="font-family: monospace; font-size: 12px;">${skill.id}</div>
             </div>
         </div>
     </div>
-
-    <div class="info-grid">
-        <div class="info-card">
-            <div class="info-card-label">Stars</div>
-            <div class="info-card-value">⭐ \${skill.stars}</div>
-        </div>
-        <div class="info-card">
-            <div class="info-card-label">Forks</div>
-            <div class="info-card-value">🍴 \${skill.forks}</div>
-        </div>
-        <div class="info-card">
-            <div class="info-card-label">下载量</div>
-            <div class="info-card-value">📥 \${downloads}</div>
-        </div>
-        <div class="info-card">
-            <div class="info-card-label">浏览量</div>
-            <div class="info-card-value">👁️ \${views}</div>
-        </div>
-    </div>
-
-    <div class="content-section">
-        <div class="section-title">技能描述</div>
-        <div class="description">
-            \${this.escapeHtml(descriptionCn || description)}
-        </div>
-        \${categoryName || subtagName ? \`
-        <div class="tags">
-            \${categoryName ? \`<span class="tag">\${this.escapeHtml(categoryName)}</span>\` : ''}
-            \${subtagName ? \`<span class="tag">\${this.escapeHtml(subtagName)}</span>\` : ''}
-        </div>
-        \` : ''}
-    </div>
-
-    <script>
-        const skillData = ${JSON.stringify(skill)};
-
-        document.getElementById('installBtn').addEventListener('click', function() {
-            vscode.postMessage({
-                command: 'install',
-                skill: skillData
-            });
-        });
-
-        document.getElementById('closeBtn').addEventListener('click', function() {
-            window.close();
-        });
-    </script>
 </body>
 </html>`;
     }
@@ -786,6 +877,24 @@ class SkillSearchProvider {
             margin-bottom: 10px;
         }
 
+        .load-more, .no-more {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            gap: 10px;
+        }
+
+        .load-more-text, .no-more-text {
+            font-size: 13px;
+            color: var(--vscode-descriptionForeground);
+        }
+
+        .no-more {
+            padding: 15px;
+        }
+
         .auth-error {
             background-color: rgba(255, 152, 0, 0.1);
             border: 1px solid #ff9800;
@@ -930,6 +1039,12 @@ class SkillSearchProvider {
                 return;
             }
 
+            // 重置分页
+            currentPage = 1;
+            hasMore = false;
+            currentQuery = query;
+            currentSortBy = sortBy;
+
             searchBtn.disabled = true;
             showLoading();
 
@@ -937,12 +1052,18 @@ class SkillSearchProvider {
                 command: 'search',
                 query: query,
                 sortBy: sortBy,
-                dataSource: dataSource
+                dataSource: dataSource,
+                page: 1
             });
         }
 
         // 事件委托 - 只添加一次
         let installedSkillsList = [];
+        let currentPage = 1;
+        let hasMore = false;
+        let isLoading = false;
+        let currentQuery = '';
+        let currentSortBy = 'popular';
         
         contentArea.addEventListener('click', function(event) {
             const btn = event.target.closest('button[data-action]');
@@ -967,6 +1088,42 @@ class SkillSearchProvider {
             }
         });
 
+        // 滚动加载更多
+        contentArea.addEventListener('scroll', function() {
+            if (isLoading || !hasMore) return;
+            
+            const scrollTop = contentArea.scrollTop;
+            const scrollHeight = contentArea.scrollHeight;
+            const clientHeight = contentArea.clientHeight;
+            
+            // 当滚动到距离底部 100px 时加载更多
+            if (scrollTop + clientHeight >= scrollHeight - 100) {
+                loadMore();
+            }
+        });
+
+        function loadMore() {
+            if (isLoading || !hasMore || !currentQuery) return;
+            
+            isLoading = true;
+            currentPage++;
+            
+            // 显示加载更多提示
+            const loadMoreDiv = document.createElement('div');
+            loadMoreDiv.className = 'load-more';
+            loadMoreDiv.id = 'loadMore';
+            loadMoreDiv.innerHTML = '<div class="loading-spinner"></div><div class="loading-text">加载更多...</div>';
+            contentArea.appendChild(loadMoreDiv);
+            
+            vscode.postMessage({
+                command: 'search',
+                query: currentQuery,
+                sortBy: currentSortBy,
+                dataSource: 'skillmap',
+                page: currentPage
+            });
+        }
+
         // 回车搜索
         searchInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -989,8 +1146,30 @@ class SkillSearchProvider {
 
                 case 'updateResults':
                     searchBtn.disabled = false;
+                    isLoading = false;
                     installedSkillsList = message.installedSkills || [];
-                    showResults(message.skills);
+                    hasMore = message.hasMore || false;
+                    
+                    // 移除加载更多提示
+                    const loadMoreDiv = document.getElementById('loadMore');
+                    if (loadMoreDiv) {
+                        loadMoreDiv.remove();
+                    }
+                    
+                    // 如果是第一页，清空内容；否则追加内容
+                    if (message.page === 1) {
+                        showResults(message.skills, false);
+                    } else {
+                        showResults(message.skills, true);
+                    }
+                    
+                    // 如果没有更多数据，显示提示
+                    if (!hasMore && message.skills.length > 0) {
+                        const noMoreDiv = document.createElement('div');
+                        noMoreDiv.className = 'no-more';
+                        noMoreDiv.innerHTML = '<div class="no-more-text">没有更多技能了</div>';
+                        contentArea.appendChild(noMoreDiv);
+                    }
                     break;
 
                 case 'showError':
@@ -1089,17 +1268,19 @@ class SkillSearchProvider {
             });
         }
 
-        function showResults(skills) {
+        function showResults(skills, append = false) {
             if (!skills || skills.length === 0) {
-                contentArea.innerHTML = \`
-                    <div class="empty-state">
-                        <div class="empty-state-icon">📭</div>
-                        <div class="empty-state-title">未找到相关技能</div>
-                        <div class="empty-state-description">
-                            尝试使用其他关键词搜索
+                if (!append) {
+                    contentArea.innerHTML = \`
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📭</div>
+                            <div class="empty-state-title">未找到相关技能</div>
+                            <div class="empty-state-description">
+                                尝试使用其他关键词搜索
+                            </div>
                         </div>
-                    </div>
-                \`;
+                    \`;
+                }
                 return;
             }
 
@@ -1147,8 +1328,18 @@ class SkillSearchProvider {
                 fragment.appendChild(card);
             });
             
-            contentArea.innerHTML = '';
-            contentArea.appendChild(fragment);
+            if (append) {
+                // 追加模式：移除"没有更多"提示，然后追加新内容
+                const noMoreDiv = document.querySelector('.no-more');
+                if (noMoreDiv) {
+                    noMoreDiv.remove();
+                }
+                contentArea.appendChild(fragment);
+            } else {
+                // 非追加模式：清空内容后添加
+                contentArea.innerHTML = '';
+                contentArea.appendChild(fragment);
+            }
         }
 
         function installSkill(skillEncoded) {
