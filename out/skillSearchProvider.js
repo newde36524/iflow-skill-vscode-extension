@@ -67,7 +67,7 @@ class SkillSearchProvider {
             console.log("收到消息:", message);
             switch (message.command) {
                 case "search":
-                    await this.handleSearch(message.query, message.sortBy);
+                    await this.handleSearch(message.query, message.sortBy, message.dataSource, message.page);
                     break;
                 case "install":
                     await this.handleInstall(message.skill);
@@ -97,6 +97,7 @@ class SkillSearchProvider {
             }
             const skills = await this.skillManager.searchSkillsOnline(query, sortBy, 10, // 每页显示10个
             page);
+            console.log('searchSkillsOnline returned skills:', skills.length, 'page:', page);
             // 检查哪些技能已安装
             const installedSkills = skills
                 .map(skill => {
@@ -104,12 +105,14 @@ class SkillSearchProvider {
                 return check.installed && check.sameRepo ? skill.id : null;
             })
                 .filter(id => id !== null);
+            const hasMore = skills.length === 10; // 如果返回的数量等于请求的数量，可能还有更多
+            console.log('Sending updateResults - page:', page, 'hasMore:', hasMore, 'skills:', skills.length);
             this.currentPanel?.webview.postMessage({
                 command: "updateResults",
                 skills: skills,
                 installedSkills: installedSkills,
                 page: page,
-                hasMore: skills.length === 10, // 如果返回的数量等于请求的数量，可能还有更多
+                hasMore: hasMore,
             });
         }
         catch (error) {
@@ -1129,14 +1132,21 @@ class SkillSearchProvider {
 
         // 点击加载更多按钮
         function loadMore() {
-            if (isLoading || !hasMore || !currentQuery) return;
+            console.log('loadMore called - isLoading:', isLoading, 'hasMore:', hasMore, 'currentQuery:', currentQuery);
+            
+            if (isLoading || !hasMore || !currentQuery) {
+                console.log('loadMore blocked - conditions not met');
+                return;
+            }
             
             // 速率限制：1秒内只查询一次
             const now = Date.now();
             if (now - lastLoadTime < 1000) {
+                console.log('loadMore blocked - rate limit');
                 return;
             }
             
+            console.log('loadMore executing - page:', currentPage + 1);
             lastLoadTime = now;
             isLoading = true;
             currentPage++;
@@ -1148,13 +1158,15 @@ class SkillSearchProvider {
                 loadMoreBtn.textContent = '加载中...';
             }
             
-            vscode.postMessage({
+            const message = {
                 command: 'search',
                 query: currentQuery,
                 sortBy: currentSortBy,
                 dataSource: 'skillmap',
                 page: currentPage
-            });
+            };
+            console.log('Sending search message:', message);
+            vscode.postMessage(message);
         }
 
         // 回车搜索
@@ -1179,6 +1191,7 @@ class SkillSearchProvider {
                     break;
 
                 case 'updateResults':
+                    console.log('Received updateResults - page:', message.page, 'skills:', message.skills.length, 'hasMore:', message.hasMore);
                     searchBtn.disabled = false;
                     isLoading = false;
                     installedSkillsList = message.installedSkills || [];
@@ -1218,12 +1231,16 @@ class SkillSearchProvider {
                             // 绑定点击事件
                             document.getElementById('loadMoreBtn').addEventListener('click', loadMore);
                         } else {
-                            // 更新按钮状态
-                            const loadMoreBtn = loadMoreBtnDiv.querySelector('.load-more-btn');
-                            if (loadMoreBtn) {
-                                loadMoreBtn.disabled = false;
-                                loadMoreBtn.textContent = '加载更多';
-                            }
+                            // 移除旧按钮并重新添加到末尾
+                            loadMoreBtnDiv.remove();
+                            const newDiv = document.createElement('div');
+                            newDiv.className = 'load-more-btn-container';
+                            newDiv.id = 'loadMoreBtnDiv';
+                            newDiv.innerHTML = '<button class="load-more-btn" id="loadMoreBtn">加载更多</button>';
+                            contentArea.appendChild(newDiv);
+                            
+                            // 绑定点击事件
+                            document.getElementById('loadMoreBtn').addEventListener('click', loadMore);
                         }
                     }
                     break;
