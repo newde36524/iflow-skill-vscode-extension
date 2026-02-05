@@ -96,9 +96,17 @@ class SkillSearchProvider {
                 await config.update("skillDataSource", dataSource, true);
             }
             const skills = await this.skillManager.searchSkillsOnline(query, sortBy, 5);
+            // 检查哪些技能已安装
+            const installedSkills = skills
+                .map(skill => {
+                const check = this.skillManager.isSkillInstalled(skill.name, skill.url);
+                return check.installed && check.sameRepo ? skill.id : null;
+            })
+                .filter(id => id !== null);
             this.currentPanel?.webview.postMessage({
                 command: "updateResults",
                 skills: skills,
+                installedSkills: installedSkills,
             });
         }
         catch (error) {
@@ -145,8 +153,14 @@ class SkillSearchProvider {
                 console.log("========== 安装结果 ==========");
                 console.log("Success:", result.success);
                 console.log("Error:", result.error);
+                console.log("Already Installed:", result.alreadyInstalled);
                 if (result.success) {
-                    vscode.window.showInformationMessage(`技能 "${skill.name}" 安装成功！`);
+                    if (result.alreadyInstalled) {
+                        vscode.window.showInformationMessage(`技能 "${skill.name}" 已安装，跳过重复安装。`);
+                    }
+                    else {
+                        vscode.window.showInformationMessage(`技能 "${skill.name}" 安装成功！`);
+                    }
                 }
                 else {
                     throw new Error(result.error || "安装失败");
@@ -599,6 +613,18 @@ class SkillSearchProvider {
             font-size: 11px;
         }
 
+        .installed-badge {
+            background-color: rgba(78, 201, 176, 0.2);
+            color: #4ec9b0;
+            border: 1px solid #4ec9b0;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-left: 8px;
+        }
+
         .skill-stats {
             display: flex;
             gap: 15px;
@@ -915,6 +941,32 @@ class SkillSearchProvider {
             });
         }
 
+        // 事件委托 - 只添加一次
+        let installedSkillsList = [];
+        
+        contentArea.addEventListener('click', function(event) {
+            const btn = event.target.closest('button[data-action]');
+            if (!btn) return;
+            
+            const card = btn.closest('.skill-card');
+            if (!card || !card.dataset.skillData) return;
+            
+            const action = btn.dataset.action;
+            const skill = JSON.parse(card.dataset.skillData);
+            
+            console.log('Button clicked:', action, 'Skill:', skill.name);
+            console.log('Skill rawData:', skill.rawData);
+            
+            if (action === 'viewDetail') {
+                vscode.postMessage({
+                    command: 'viewDetail',
+                    skill: skill
+                });
+            } else if (action === 'installSkill') {
+                installSkill(encodeURIComponent(JSON.stringify(skill)));
+            }
+        });
+
         // 回车搜索
         searchInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
@@ -937,6 +989,7 @@ class SkillSearchProvider {
 
                 case 'updateResults':
                     searchBtn.disabled = false;
+                    installedSkillsList = message.installedSkills || [];
                     showResults(message.skills);
                     break;
 
@@ -952,6 +1005,10 @@ class SkillSearchProvider {
 
                 case 'installSuccess':
                     markAsInstalled(message.skillId);
+                    // 更新已安装列表
+                    if (!installedSkillsList.includes(message.skillId)) {
+                        installedSkillsList.push(message.skillId);
+                    }
                     break;
             }
         });
@@ -1046,14 +1103,28 @@ class SkillSearchProvider {
                 return;
             }
 
-            contentArea.innerHTML = skills.map(skill => \`
-                <div class="skill-card" id="skill-\${skill.id}">
+            // 使用文档片段来构建 DOM，避免重复添加事件监听器
+            const fragment = document.createDocumentFragment();
+            
+            skills.forEach(skill => {
+                const card = document.createElement('div');
+                card.className = 'skill-card';
+                card.id = 'skill-' + skill.id;
+                
+                // 将 skill 数据存储在 card 上，避免 HTML 属性解析问题
+                card.dataset.skillData = JSON.stringify(skill);
+                
+                // 检查是否已安装
+                const isInstalled = installedSkillsList.includes(skill.id);
+                
+                card.innerHTML = \`
                     <div class="skill-header">
                         <div>
                             <div class="skill-name">\${escapeHtml(skill.name)}</div>
                             <div class="skill-repo">
                                 <a href="\${skill.url}" target="_blank" title="打开 GitHub 仓库">🔗 GitHub</a>
                                 <span class="skill-author">by \${escapeHtml(skill.repository)}</span>
+                                \${isInstalled ? '<span class="installed-badge">已安装</span>' : ''}
                             </div>
                         </div>
                     </div>
@@ -1063,35 +1134,21 @@ class SkillSearchProvider {
                             来自 SkillMap 市场
                         </div>
                         <div class="skill-actions">
-                            <button class="action-btn" data-action="viewDetail" data-skill='\${JSON.stringify(skill)}'>
+                            <button class="action-btn" data-action="viewDetail">
                                 查看详情
                             </button>
-                            <button class="action-btn install-btn" data-action="installSkill" data-skill='\${JSON.stringify(skill)}'>
-                                安装
+                            <button class="action-btn install-btn \${isInstalled ? 'disabled' : ''}" data-action="installSkill" \${isInstalled ? 'disabled' : ''}>
+                                \${isInstalled ? '已安装' : '安装'}
                             </button>
                         </div>
                     </div>
-                </div>
-            \`).join('');
-
-            // 添加事件委托处理点击事件
-            contentArea.addEventListener('click', function(event) {
-                const btn = event.target.closest('button[data-action]');
-                if (!btn) return;
+                \`;
                 
-                const action = btn.dataset.action;
-                const skillData = btn.dataset.skill;
-                
-                if (!skillData) return;
-                
-                const skill = JSON.parse(skillData);
-                
-                if (action === 'viewDetail') {
-                    viewDetail(encodeURIComponent(JSON.stringify(skill)));
-                } else if (action === 'installSkill') {
-                    installSkill(encodeURIComponent(JSON.stringify(skill)));
-                }
+                fragment.appendChild(card);
             });
+            
+            contentArea.innerHTML = '';
+            contentArea.appendChild(fragment);
         }
 
         function installSkill(skillEncoded) {

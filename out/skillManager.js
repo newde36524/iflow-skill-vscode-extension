@@ -424,6 +424,28 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         // 返回所有技能，包括本地和全局的
         return Array.from(this.skills.values());
     }
+    // 检查技能是否已安装（通过 name 或 githubUrl）
+    isSkillInstalled(skillName, githubUrl) {
+        const allSkills = this.getAllSkills();
+        // 查找同名技能
+        const sameNameSkills = allSkills.filter(s => s.name === skillName);
+        if (sameNameSkills.length > 0) {
+            if (githubUrl) {
+                // 检查是否有相同的 GitHub URL
+                const sameRepoSkill = sameNameSkills.find(s => {
+                    if (s.rawData && s.rawData.github_url) {
+                        return s.rawData.github_url === githubUrl;
+                    }
+                    return false;
+                });
+                if (sameRepoSkill) {
+                    return { installed: true, skill: sameRepoSkill, sameRepo: true };
+                }
+            }
+            return { installed: true, skill: sameNameSkills[0], sameRepo: false };
+        }
+        return { installed: false };
+    }
     getLocalSkills() {
         // 只返回本地技能
         return Array.from(this.skills.values()).filter((skill) => !skill.isGlobal);
@@ -654,6 +676,18 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
             console.log("========== installSkillFromGitHub 开始 ==========");
             console.log("GitHub URL:", githubUrl);
             console.log("Skill Name:", skillName);
+            // 检查是否已安装
+            const installCheck = this.isSkillInstalled(skillName, githubUrl);
+            if (installCheck.installed) {
+                if (installCheck.sameRepo) {
+                    console.log("技能已安装且来自相同的 GitHub 仓库，跳过安装");
+                    return { success: true, alreadyInstalled: true };
+                }
+                else {
+                    console.log("技能已安装但来自不同的 GitHub 仓库");
+                    // 继续安装，使用新的名称
+                }
+            }
             if (progressCallback) {
                 progressCallback("正在解析 GitHub URL...");
             }

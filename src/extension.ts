@@ -479,11 +479,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
       // 根据技能类型提供不同的删除选项
       if (skill.isGlobal) {
-        // 全局技能：可以删除文件或仅从列表移除
-        message = `What would you like to do with "${skill.name}"?\n\n1. Delete Global Skill File - Delete the actual skill file from ~/.iflow/skills/\n2. Remove from List - Only remove from the list, keep the file`;
+        // 全局技能：直接删除文件
+        message = `Are you sure you want to delete global skill "${skill.name}"?`;
         options = [
-          { title: "Delete Global Skill File" },
-          { title: "Remove from List" },
+          { title: "Delete" },
           { title: "Cancel", isCloseAffordance: true },
         ];
       } else {
@@ -502,24 +501,19 @@ export async function activate(context: vscode.ExtensionContext) {
       );
 
       if (choice?.title === "Delete") {
-        // 删除本地技能
-        await skillManager.deleteSkill(skillItem.id);
-        skillsTreeDataProvider.refresh();
-        vscode.window.showInformationMessage(`Skill "${skill.name}" deleted!`);
-      } else if (choice?.title === "Delete Global Skill File") {
-        // 删除全局技能文件
-        await skillManager.deleteSkillFromGlobal(skillItem.id);
-        skillsTreeDataProvider.refresh();
-        vscode.window.showInformationMessage(
-          `Global skill "${skill.name}" file deleted!`,
-        );
-      } else if (choice?.title === "Remove from List") {
-        // 仅从列表移除
-        await skillManager.removeSkillFromList(skillItem.id);
-        skillsTreeDataProvider.refresh();
-        vscode.window.showInformationMessage(
-          `Skill "${skill.name}" removed from list!`,
-        );
+        if (skill.isGlobal) {
+          // 删除全局技能文件
+          await skillManager.deleteSkillFromGlobal(skillItem.id);
+          skillsTreeDataProvider.refresh();
+          vscode.window.showInformationMessage(
+            `Global skill "${skill.name}" deleted!`,
+          );
+        } else {
+          // 删除本地技能
+          await skillManager.deleteSkill(skillItem.id);
+          skillsTreeDataProvider.refresh();
+          vscode.window.showInformationMessage(`Skill "${skill.name}" deleted!`);
+        }
       }
     },
   );
@@ -1061,18 +1055,51 @@ export async function activate(context: vscode.ExtensionContext) {
       } else if (action.label === "编辑") {
         skillWebviewProvider.showSkillEditorPanel(selected.skill);
       } else if (action.label === "删除") {
-        const confirm = await vscode.window.showWarningMessage(
-          `确定要删除技能 "${selected.skill.name}" 吗？`,
-          "删除",
-          "取消",
+        const skill = skillManager.getSkill(selected.skill.id);
+        if (!skill) {
+          return;
+        }
+
+        let message: string;
+        let options: vscode.MessageItem[];
+
+        // 根据技能类型提供不同的删除选项
+        if (skill.isGlobal) {
+          // 全局技能：直接删除文件
+          message = `Are you sure you want to delete global skill "${skill.name}"?`;
+          options = [
+            { title: "Delete" },
+            { title: "Cancel", isCloseAffordance: true },
+          ];
+        } else {
+          // 本地技能：直接删除
+          message = `Are you sure you want to delete skill "${skill.name}"?`;
+          options = [
+            { title: "Delete" },
+            { title: "Cancel", isCloseAffordance: true },
+          ];
+        }
+
+        const choice = await vscode.window.showWarningMessage(
+          message,
+          { modal: true },
+          ...options,
         );
 
-        if (confirm === "删除") {
-          await skillManager.deleteSkill(selected.skill.id);
-          skillsTreeDataProvider.refresh();
-          vscode.window.showInformationMessage(
-            `技能 "${selected.skill.name}" 已删除！`,
-          );
+        if (choice?.title === "Delete") {
+          if (skill.isGlobal) {
+            // 删除全局技能文件
+            await skillManager.deleteSkillFromGlobal(selected.skill.id);
+            skillsTreeDataProvider.refresh();
+            vscode.window.showInformationMessage(
+              `Global skill "${skill.name}" deleted!`,
+            );
+          } else {
+            // 删除本地技能
+            await skillManager.deleteSkill(selected.skill.id);
+            skillsTreeDataProvider.refresh();
+            vscode.window.showInformationMessage(`Skill "${skill.name}" deleted!`);
+          }
         }
       } else if (action.label === "导入到全局") {
         const result = await skillManager.importSkillToGlobal(
