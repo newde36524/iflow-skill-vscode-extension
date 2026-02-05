@@ -143,7 +143,8 @@ export class SkillManager {
               const skill: Skill = {
                 id: `global-${this.hashString(skillFilePath)}`,
                 name: displayName,
-                description: content.substring(0, 200).split("\n")[0] || "Global skill",
+                description:
+                  content.substring(0, 200).split("\n")[0] || "Global skill",
                 content: content,
                 projectPath: globalSkillsDir,
                 absolutePath: skillFilePath,
@@ -179,7 +180,8 @@ export class SkillManager {
             const skill: Skill = {
               id: `global-${this.hashString(fullPath)}`,
               name: displayName,
-              description: content.substring(0, 200).split("\n")[0] || "Global skill",
+              description:
+                content.substring(0, 200).split("\n")[0] || "Global skill",
               content: content,
               projectPath: globalSkillsDir,
               absolutePath: fullPath,
@@ -215,8 +217,6 @@ export class SkillManager {
     // 清空当前技能列表
     this.skills.clear();
   }
-
-
 
   async createSkill(
     name: string,
@@ -768,8 +768,12 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
           repository: item.author || "SkillMap",
           stars: item.stars || 0,
           forks: item.forks || 0,
-          createdAt: new Date((item.updated_at || Date.now()) * 1000).toISOString(),
-          updatedAt: new Date((item.updated_at || Date.now()) * 1000).toISOString(),
+          createdAt: new Date(
+            (item.updated_at || Date.now()) * 1000,
+          ).toISOString(),
+          updatedAt: new Date(
+            (item.updated_at || Date.now()) * 1000,
+          ).toISOString(),
           // 保存完整的 API 数据用于详情展示
           rawData: item,
         });
@@ -793,55 +797,161 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
     return await this.searchSkillsFromSkillMap(query, limit);
   }
 
-
-
-  // 在线安装技能
-  async installOnlineSkill(
-    onlineSkill: OnlineSkill,
+  // 从 GitHub 下载整个仓库并安装技能到全局
+  async installSkillFromGitHub(
+    githubUrl: string,
+    skillName: string,
     progressCallback?: (message: string) => void,
-  ): Promise<void> {
+  ): Promise<{ success: boolean; error?: string }> {
     try {
       if (progressCallback) {
-        progressCallback("正在准备安装...");
+        progressCallback("正在解析 GitHub URL...");
       }
 
-      const globalSkillsDir = SkillManager.getIflowGlobalSkillsPath();
+      // 解析 GitHub URL
+      const urlParts = githubUrl.match(
+        /github\.com\/([^\/]+)\/([^\/]+)\/tree\/([^\/]+)\/(.+)/,
+      );
+      if (!urlParts) {
+        throw new Error("无效的 GitHub URL " + githubUrl);
+      }
 
+      const [, owner, repo, branch, targetPath] = urlParts;
+
+      // 准备临时目录
+      const tempDir = path.join(process.env.TMPDIR || "/tmp", `skill-${Date.now()}`);
+      fs.mkdirSync(tempDir, { recursive: true });
+
+      if (progressCallback) {
+        progressCallback("正在克隆 GitHub 仓库...");
+      }
+
+      // 克隆整个仓库
+      await this.cloneRepository(owner, repo, branch, tempDir);
+
+      if (progressCallback) {
+        progressCallback("正在定位技能目录...");
+      }
+
+      // 定位目标目录
+      const sourceDir = path.join(tempDir, targetPath);
+
+      if (!fs.existsSync(sourceDir)) {
+        throw new Error(`技能目录不存在: ${sourceDir}`);
+      }
+
+      if (progressCallback) {
+        progressCallback("正在复制技能文件...");
+      }
+
+      // 准备保存路径
+      const globalSkillsDir = SkillManager.getIflowGlobalSkillsPath();
       if (!fs.existsSync(globalSkillsDir)) {
         fs.mkdirSync(globalSkillsDir, { recursive: true });
       }
 
-      // 确保技能名称唯一（添加后缀避免冲突）
-      let skillName = onlineSkill.name;
+      // 确保技能名称唯一
+      let finalSkillName = skillName;
       let counter = 1;
-
-      while (fs.existsSync(path.join(globalSkillsDir, `${skillName}.md`))) {
-        skillName = `${onlineSkill.name}-${counter}`;
+      while (fs.existsSync(path.join(globalSkillsDir, finalSkillName))) {
+        finalSkillName = `${skillName}-${counter}`;
         counter++;
       }
 
-      if (progressCallback) {
-        progressCallback(`正在安装技能: ${skillName}`);
-      }
+      const skillDirPath = path.join(globalSkillsDir, finalSkillName);
+      fs.mkdirSync(skillDirPath, { recursive: true });
 
-      const skillFilePath = path.join(globalSkillsDir, `${skillName}.md`);
-      const version = this.extractVersionFromContent(onlineSkill.content);
-      const contentWithVersion = this.addVersionToContent(
-        onlineSkill.content,
-        version || 1,
-      );
-
-      await fs.promises.writeFile(skillFilePath, contentWithVersion, "utf-8");
+      // 复制整个技能目录
+      await this.copyDirectory(sourceDir, skillDirPath);
 
       if (progressCallback) {
-        progressCallback("技能安装成功！");
+        progressCallback("正在清理临时文件...");
       }
 
-      // 刷新技能列表
-      this.reloadSkills();
+      // 清理临时目录
+      fs.rmSync(tempDir, { recursive: true, force: true });
+
+      if (progressCallback) {
+        progressCallback("正在添加到技能列表...");
+      }
+
+      // 读取 SKILL.md 内容
+      const skillMdPath = path.join(skillDirPath, "SKILL.md");
+      let skillContent = "";
+      if (fs.existsSync(skillMdPath)) {
+        skillContent = fs.readFileSync(skillMdPath, "utf-8");
+      }
+
+      // 创建技能对象并添加到列表
+      const skillId = Date.now().toString();
+      const skill: Skill = {
+        id: skillId,
+        name: finalSkillName,
+        description: skillContent.substring(0, 200) || "从 GitHub 安装的技能",
+        content: skillContent || `# ${skillName}\n\n从 GitHub 安装的技能`,
+        projectPath: skillDirPath,
+        absolutePath: skillMdPath,
+        isGlobal: true,
+        version: 1,
+        globalVersion: 1,
+        syncStatus: "synced",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      this.skills.set(skillId, skill);
+
+      return { success: true };
     } catch (error) {
-      console.error("Error installing online skill:", error);
-      throw error;
+      console.error("Error installing skill from GitHub:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "安装失败",
+      };
+    }
+  }
+
+  // 克隆 Git 仓库
+  private async cloneRepository(
+    owner: string,
+    repo: string,
+    branch: string,
+    targetDir: string,
+  ): Promise<void> {
+    const { execSync } = require("child_process");
+    
+    try {
+      // 使用 git clone 命令克隆指定分支
+      const cloneUrl = `https://github.com/${owner}/${repo}.git`;
+      execSync(
+        `git clone --depth 1 --single-branch --branch ${branch} "${cloneUrl}" "${targetDir}"`,
+        { stdio: "pipe" }
+      );
+    } catch (error) {
+      throw new Error(`克隆仓库失败: ${error instanceof Error ? error.message : "未知错误"}`);
+    }
+  }
+
+  // 复制整个目录
+  private async copyDirectory(source: string, target: string): Promise<void> {
+    if (!fs.existsSync(source)) {
+      throw new Error(`源目录不存在: ${source}`);
+    }
+
+    fs.mkdirSync(target, { recursive: true });
+
+    const items = fs.readdirSync(source);
+
+    for (const item of items) {
+      const sourcePath = path.join(source, item);
+      const targetPath = path.join(target, item);
+      const stat = fs.statSync(sourcePath);
+
+      if (stat.isDirectory()) {
+        await this.copyDirectory(sourcePath, targetPath);
+      } else {
+        fs.copyFileSync(sourcePath, targetPath);
+      }
     }
   }
 }

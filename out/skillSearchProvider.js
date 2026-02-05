@@ -39,6 +39,7 @@ class SkillSearchProvider {
     constructor(_extensionUri, skillManager) {
         this._extensionUri = _extensionUri;
         this.skillManager = skillManager;
+        this.detailPanels = new Map();
     }
     showSearchPanel() {
         if (this.currentPanel) {
@@ -63,6 +64,7 @@ class SkillSearchProvider {
             this.currentPanel = undefined;
         });
         this.currentPanel.webview.onDidReceiveMessage(async (message) => {
+            console.log("收到消息:", message);
             switch (message.command) {
                 case "search":
                     await this.handleSearch(message.query, message.sortBy);
@@ -121,29 +123,60 @@ class SkillSearchProvider {
     }
     async handleInstall(skill) {
         try {
-            // 暂时打开 GitHub 链接
-            if (skill.url) {
-                await vscode.env.openExternal(vscode.Uri.parse(skill.url));
-                vscode.window.showInformationMessage(`已打开技能 "${skill.name}" 的 GitHub 仓库`);
-            }
-            else {
-                vscode.window.showWarningMessage(`技能 "${skill.name}" 没有 GitHub 仓库链接`);
-            }
+            console.log("开始安装技能:", skill.name, skill.url);
+            // 使用进度窗口显示安装过程
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `正在安装技能: ${skill.name}`,
+                cancellable: false,
+            }, async (progress) => {
+                // 定义进度回调函数
+                const progressCallback = (message) => {
+                    console.log("安装进度:", message);
+                    progress.report({ message: message });
+                };
+                // 调用 SkillManager 的安装方法
+                const result = await this.skillManager.installSkillFromGitHub(skill.url, skill.name, progressCallback);
+                console.log("安装结果:", result);
+                if (result.success) {
+                    vscode.window.showInformationMessage(`技能 "${skill.name}" 安装成功！`);
+                }
+                else {
+                    throw new Error(result.error || "安装失败");
+                }
+            });
             this.currentPanel?.webview.postMessage({
                 command: "installSuccess",
                 skillId: skill.id,
             });
         }
         catch (error) {
-            vscode.window.showErrorMessage(`打开失败: ${error instanceof Error ? error.message : "未知错误"}`);
+            console.error("安装错误:", error);
+            vscode.window.showErrorMessage(`安装失败: ${error instanceof Error ? error.message : "未知错误"}`);
         }
     }
     handleViewDetail(skill) {
+        // 检查是否已有打开的详情页面
+        const existingPanel = this.detailPanels.get(skill.id);
+        if (existingPanel) {
+            // 如果已打开，直接显示该页面
+            existingPanel.reveal(existingPanel.viewColumn || vscode.ViewColumn.Beside);
+            // 更新内容（因为数据可能已更新）
+            existingPanel.webview.html = this.getDetailWebviewContent(skill, existingPanel.webview);
+            return;
+        }
+        // 创建新的详情页面
         const detailPanel = vscode.window.createWebviewPanel("iflowSkillDetail", `Skill Details: ${skill.name}`, vscode.ViewColumn.Beside, {
             enableScripts: false,
             retainContextWhenHidden: true,
         });
         detailPanel.webview.html = this.getDetailWebviewContent(skill, detailPanel.webview);
+        // 保存到 Map 中
+        this.detailPanels.set(skill.id, detailPanel);
+        // 当面板关闭时，从 Map 中移除
+        detailPanel.onDidDispose(() => {
+            this.detailPanels.delete(skill.id);
+        });
     }
     getDetailWebviewContent(skill, webview) {
         const rawData = skill.rawData || {};
@@ -206,10 +239,7 @@ class SkillSearchProvider {
         .author {
             font-size: 14px;
             color: var(--vscode-descriptionForeground);
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+            margin-bottom: 8px;
         }
 
         .author a {
@@ -219,6 +249,20 @@ class SkillSearchProvider {
 
         .author a:hover {
             text-decoration: underline;
+        }
+
+        .data-source {
+            font-size: 13px;
+            color: var(--vscode-descriptionForeground);
+            margin-bottom: 15px;
+        }
+
+        .data-source-badge {
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-weight: 500;
         }
 
         .button-group {
@@ -328,8 +372,11 @@ class SkillSearchProvider {
             <div class="author">
                 作者: <a href="https://github.com/\${this.escapeHtml(skill.repository)}" target="_blank">@\${this.escapeHtml(skill.repository)}</a>
             </div>
+            <div class="data-source">
+                📍 来源: <span class="data-source-badge">SkillMap 市场</span>
+            </div>
             <div class="button-group">
-                <button class="btn-primary" id="installBtn">打开 GitHub 仓库</button>
+                <button class="btn-primary" id="installBtn">安装</button>
                 <button class="btn-secondary" id="closeBtn">关闭</button>
             </div>
         </div>
@@ -371,7 +418,10 @@ class SkillSearchProvider {
         const skillData = ${JSON.stringify(skill)};
 
         document.getElementById('installBtn').addEventListener('click', function() {
-            window.location.href = skillData.url;
+            vscode.postMessage({
+                command: 'install',
+                skill: skillData
+            });
         });
 
         document.getElementById('closeBtn').addEventListener('click', function() {
@@ -519,16 +569,26 @@ class SkillSearchProvider {
             color: var(--vscode-descriptionForeground);
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 8px;
         }
 
         .skill-repo a {
             color: var(--vscode-textLink-foreground);
             text-decoration: none;
+            padding: 2px 8px;
+            border-radius: 3px;
+            background-color: var(--vscode-textCodeBlock-background);
+            transition: background-color 0.2s;
         }
 
         .skill-repo a:hover {
-            text-decoration: underline;
+            text-decoration: none;
+            background-color: var(--vscode-button-secondaryBackground);
+        }
+
+        .skill-author {
+            color: var(--vscode-descriptionForeground);
+            font-size: 11px;
         }
 
         .skill-stats {
@@ -984,7 +1044,8 @@ class SkillSearchProvider {
                         <div>
                             <div class="skill-name">\${escapeHtml(skill.name)}</div>
                             <div class="skill-repo">
-                                📦 <a href="\${skill.url}" target="_blank">\${skill.repository}</a>
+                                <a href="\${skill.url}" target="_blank" title="打开 GitHub 仓库">🔗 GitHub</a>
+                                <span class="skill-author">by \${escapeHtml(skill.repository)}</span>
                             </div>
                         </div>
                     </div>
@@ -1007,7 +1068,9 @@ class SkillSearchProvider {
         }
 
         function installSkill(skillEncoded) {
+            console.log('installSkill called with:', skillEncoded);
             const skill = JSON.parse(decodeURIComponent(skillEncoded));
+            console.log('Parsed skill:', skill);
             const btn = document.querySelector(\`#skill-\${skill.id} .install-btn\`);
             if (btn) {
                 btn.disabled = true;
