@@ -47,6 +47,10 @@ async function activate(context) {
     const skillsTreeDataProvider = new skillsTreeProvider_1.SkillsTreeDataProvider(skillManager);
     const skillWebviewProvider = new skillWebviewProvider_1.SkillWebviewProvider(context.extensionUri, skillManager);
     const skillSearchProvider = new skillSearchProvider_1.SkillSearchProvider(context.extensionUri, skillManager);
+    // 设置技能变更回调，当保存技能时刷新树
+    skillWebviewProvider.setOnSkillChanged(() => {
+        skillsTreeDataProvider.refresh();
+    });
     // 初始化时检查所有skill的同步状态
     const skills = skillManager.getAllSkills();
     for (const skill of skills) {

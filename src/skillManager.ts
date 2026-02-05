@@ -114,77 +114,45 @@ export class SkillManager {
       return;
     }
 
-    // 只读取下一级子文件夹内的 SKILL.md 文件（不递归）
-    const loadMarkdownFiles = (dir: string, relativePath: string = "") => {
-      if (!fs.existsSync(dir)) {
-        return;
-      }
-      this.skills.clear();
-      const items = fs.readdirSync(dir, { withFileTypes: true });
-      items.forEach((item) => {
-        const fullPath = path.join(dir, item.name);
-        const itemRelativePath = path.join(relativePath, item.name);
-
-        if (item.isDirectory() && relativePath === "") {
-          // 只处理下一级子目录，查找其中的 SKILL.md 文件
-
-          const skillFilePath = path.join(fullPath, "SKILL.md");
-
-          if (fs.existsSync(skillFilePath)) {
-            try {
-              const content = fs.readFileSync(skillFilePath, "utf-8");
-
-              const displayName = itemRelativePath;
-
-              const version = this.extractVersionFromContent(content);
-
-              const stats = fs.statSync(skillFilePath);
-
-              const skill: Skill = {
-                id: `global-${this.hashString(skillFilePath)}`,
-                name: displayName,
-                description:
-                  content.substring(0, 200).split("\n")[0] || "Global skill",
-                content: content,
-                projectPath: globalSkillsDir,
-                absolutePath: skillFilePath,
-                createdAt: stats.birthtime.toISOString(),
-                updatedAt: stats.mtime.toISOString(),
-                version: version || 1,
-                syncStatus: "synced",
-                globalVersion: version || 1,
-                isGlobal: true,
-              };
-
-              this.skills.set(skill.id, skill);
-            } catch (error) {
-              console.error(
-                `Error loading global skill from ${skillFilePath}:`,
-                error,
-              );
+    // 读取全局技能目录下的所有子文件夹
+    const items = fs.readdirSync(globalSkillsDir, { withFileTypes: true });
+    
+    items.forEach((item) => {
+      if (item.isDirectory()) {
+        const skillDirPath = path.join(globalSkillsDir, item.name);
+        
+        // 查找 SKILL.md 文件（可能在根目录或子目录中）
+        let skillFilePath = path.join(skillDirPath, "SKILL.md");
+        
+        // 如果根目录没有 SKILL.md，尝试在 references 或其他子目录中查找
+        if (!fs.existsSync(skillFilePath)) {
+          const subdirs = fs.readdirSync(skillDirPath, { withFileTypes: true });
+          for (const subItem of subdirs) {
+            if (subItem.isDirectory()) {
+              const potentialPath = path.join(skillDirPath, subItem.name, "SKILL.md");
+              if (fs.existsSync(potentialPath)) {
+                skillFilePath = potentialPath;
+                break;
+              }
             }
           }
-        } else if (
-          item.isFile() &&
-          item.name.endsWith(".md") &&
-          relativePath === ""
-        ) {
-          // 读取根目录下的 .md 文件
+        }
+
+        // 如果找到了 SKILL.md 文件，加载该技能
+        if (fs.existsSync(skillFilePath)) {
           try {
-            const content = fs.readFileSync(fullPath, "utf-8");
-            const skillName = item.name.replace(".md", "");
-            const displayName = skillName;
+            const content = fs.readFileSync(skillFilePath, "utf-8");
+            const displayName = item.name; // 使用文件夹名称作为技能名称
             const version = this.extractVersionFromContent(content);
-            const stats = fs.statSync(fullPath);
+            const stats = fs.statSync(skillFilePath);
 
             const skill: Skill = {
-              id: `global-${this.hashString(fullPath)}`,
+              id: `global-${this.hashString(skillDirPath)}`,
               name: displayName,
-              description:
-                content.substring(0, 200).split("\n")[0] || "Global skill",
+              description: content.substring(0, 200).split("\n")[0] || "Global skill",
               content: content,
-              projectPath: globalSkillsDir,
-              absolutePath: fullPath,
+              projectPath: skillDirPath,
+              absolutePath: skillFilePath,
               createdAt: stats.birthtime.toISOString(),
               updatedAt: stats.mtime.toISOString(),
               version: version || 1,
@@ -195,16 +163,45 @@ export class SkillManager {
 
             this.skills.set(skill.id, skill);
           } catch (error) {
-            console.error(
-              `Error loading global skill from ${fullPath}:`,
-              error,
-            );
+            console.error(`Error loading global skill from ${skillFilePath}:`, error);
           }
         }
-      });
-    };
+      }
+    });
 
-    loadMarkdownFiles(globalSkillsDir);
+    // 读取根目录下的 .md 文件
+    const rootFiles = fs.readdirSync(globalSkillsDir, { withFileTypes: true });
+    rootFiles.forEach((item) => {
+      if (item.isFile() && item.name.endsWith(".md")) {
+        const fullPath = path.join(globalSkillsDir, item.name);
+        try {
+          const content = fs.readFileSync(fullPath, "utf-8");
+          const skillName = item.name.replace(".md", "");
+          const displayName = skillName;
+          const version = this.extractVersionFromContent(content);
+          const stats = fs.statSync(fullPath);
+
+          const skill: Skill = {
+            id: `global-${this.hashString(fullPath)}`,
+            name: displayName,
+            description: content.substring(0, 200).split("\n")[0] || "Global skill",
+            content: content,
+            projectPath: globalSkillsDir,
+            absolutePath: fullPath,
+            createdAt: stats.birthtime.toISOString(),
+            updatedAt: stats.mtime.toISOString(),
+            version: version || 1,
+            syncStatus: "synced",
+            globalVersion: version || 1,
+            isGlobal: true,
+          };
+
+          this.skills.set(skill.id, skill);
+        } catch (error) {
+          console.error(`Error loading global skill from ${fullPath}:`, error);
+        }
+      }
+    });
   }
 
   reloadSkills(): void {

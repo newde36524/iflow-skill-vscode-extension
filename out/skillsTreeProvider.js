@@ -110,38 +110,35 @@ class SkillsTreeDataProvider {
     }
     getChildren(element) {
         if (!element) {
-            // Root level - show all skills grouped by project path
+            // Root level - show all skills in a single list, deduplicate by name
             const skills = this.skillManager.getAllSkills();
-            const groupedSkills = new Map();
+            // 使用 Map 去重，相同 name 的技能只保留一个（优先保留全局技能）
+            const uniqueSkills = new Map();
             skills.forEach(skill => {
-                // 使用完整的projectPath作为分组键，确保不同路径的相同名称项目分开显示
-                const projectKey = skill.projectPath;
-                if (!groupedSkills.has(projectKey)) {
-                    groupedSkills.set(projectKey, []);
+                if (!uniqueSkills.has(skill.name)) {
+                    uniqueSkills.set(skill.name, skill);
                 }
-                groupedSkills.get(projectKey).push(skill);
+                else {
+                    const existing = uniqueSkills.get(skill.name);
+                    // 如果已有的是本地技能，新的是全局技能，则替换
+                    if (existing && !existing.isGlobal && skill.isGlobal) {
+                        uniqueSkills.set(skill.name, skill);
+                    }
+                }
             });
-            const items = [];
-            // 首先添加全局技能分组
-            const globalSkillsPath = SkillsTreeDataProvider.getIflowGlobalSkillsPath();
-            if (groupedSkills.has(globalSkillsPath)) {
-                items.push(new SkillsTreeItem('全局技能', vscode.TreeItemCollapsibleState.Collapsed, undefined, globalSkillsPath));
-                groupedSkills.delete(globalSkillsPath);
-            }
-            // 然后添加本地技能分组
-            groupedSkills.forEach((skills, projectPath) => {
-                // 获取项目名称和路径的一部分用于显示
-                const projectName = path.basename(projectPath);
-                const parentPath = path.dirname(projectPath);
-                const displayLabel = projectName === parentPath ? projectName : `${projectName} (${parentPath})`;
-                items.push(new SkillsTreeItem(displayLabel, vscode.TreeItemCollapsibleState.Collapsed, undefined, projectPath));
+            // 按是否全局技能排序：全局技能在前，本地技能在后
+            const sortedSkills = Array.from(uniqueSkills.values()).sort((a, b) => {
+                if (a.isGlobal && !b.isGlobal)
+                    return -1;
+                if (!a.isGlobal && b.isGlobal)
+                    return 1;
+                return 0;
             });
-            return Promise.resolve(items);
+            return Promise.resolve(sortedSkills.map(skill => new SkillsTreeItem(skill.name + (skill.description ? ` - ${skill.description}` : ''), vscode.TreeItemCollapsibleState.None, skill, skill.id)));
         }
         else {
-            // Project level - show skills for this specific path
-            const skills = this.skillManager.getAllSkills().filter(skill => skill.projectPath === element.id);
-            return Promise.resolve(skills.map(skill => new SkillsTreeItem(skill.name + (skill.description ? ` - ${skill.description}` : ''), vscode.TreeItemCollapsibleState.None, skill, skill.id)));
+            // No children for skill items
+            return Promise.resolve([]);
         }
     }
 }

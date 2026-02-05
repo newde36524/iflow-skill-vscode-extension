@@ -19,6 +19,11 @@ export async function activate(context: vscode.ExtensionContext) {
     skillManager,
   );
 
+  // 设置技能变更回调，当保存技能时刷新树
+  skillWebviewProvider.setOnSkillChanged(() => {
+    skillsTreeDataProvider.refresh();
+  });
+
   // 初始化时检查所有skill的同步状态
   const skills = skillManager.getAllSkills();
   for (const skill of skills) {

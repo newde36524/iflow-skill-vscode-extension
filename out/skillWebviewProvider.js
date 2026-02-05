@@ -50,6 +50,10 @@ class SkillWebviewProvider {
             typographer: true,
         });
     }
+    // 设置技能变更回调
+    setOnSkillChanged(callback) {
+        this.onSkillChangedCallback = callback;
+    }
     resolveWebviewView(webviewView, context, _token) {
         // This is required by WebviewViewProvider interface
         // We don't need to implement this for our use case
@@ -160,6 +164,27 @@ class SkillWebviewProvider {
                 // 直接将编辑后的内容覆盖到绝对路径文件
                 const fs = require("fs");
                 await fs.promises.writeFile(this.currentSkill.absolutePath, content, "utf-8");
+                // 更新技能状态为已同步
+                this.currentSkill.syncStatus = "synced";
+                this.currentSkill.content = content;
+                this.currentSkill.updatedAt = new Date().toISOString();
+                // 更新 skillManager 内存中的技能
+                this.skillManager.updateSkillInMemory(this.currentSkill);
+                // 通知 webview 更新状态显示
+                this.currentPanel?.webview.postMessage({
+                    command: "updateSyncStatus",
+                    status: "synced",
+                    statusLabel: "已同步"
+                });
+                // 通知 webview 更新初始内容（用于检测修改）
+                this.currentPanel?.webview.postMessage({
+                    command: "updateInitialContent",
+                    content: content
+                });
+                // 刷新技能树
+                if (this.onSkillChangedCallback) {
+                    this.onSkillChangedCallback();
+                }
                 vscode.window.showInformationMessage("Skill saved successfully!");
             }
             catch (error) {
