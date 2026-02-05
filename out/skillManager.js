@@ -141,6 +141,14 @@ class SkillManager {
                         const displayName = item.name; // 使用文件夹名称作为技能名称
                         const version = this.extractVersionFromContent(content);
                         const stats = fs.statSync(skillFilePath);
+                        // 读取 github_url 文件（如果存在）
+                        const githubUrlPath = path.join(skillDirPath, "github_url");
+                        let githubUrl = "";
+                        let rawData = {};
+                        if (fs.existsSync(githubUrlPath)) {
+                            githubUrl = fs.readFileSync(githubUrlPath, "utf-8").trim();
+                            rawData.github_url = githubUrl;
+                        }
                         const skill = {
                             id: `global-${this.hashString(skillDirPath)}`,
                             name: displayName,
@@ -154,6 +162,7 @@ class SkillManager {
                             syncStatus: "synced",
                             globalVersion: version || 1,
                             isGlobal: true,
+                            rawData: rawData,
                         };
                         this.skills.set(skill.id, skill);
                     }
@@ -424,27 +433,33 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         // 返回所有技能，包括本地和全局的
         return Array.from(this.skills.values());
     }
-    // 检查技能是否已安装（通过 name 或 githubUrl）
+    // 检查技能是否已安装（通过文件夹名称和 github_url 文件）
     isSkillInstalled(skillName, githubUrl) {
-        const allSkills = this.getAllSkills();
-        // 查找同名技能
-        const sameNameSkills = allSkills.filter(s => s.name === skillName);
-        if (sameNameSkills.length > 0) {
-            if (githubUrl) {
-                // 检查是否有相同的 GitHub URL
-                const sameRepoSkill = sameNameSkills.find(s => {
-                    if (s.rawData && s.rawData.github_url) {
-                        return s.rawData.github_url === githubUrl;
-                    }
-                    return false;
-                });
-                if (sameRepoSkill) {
-                    return { installed: true, skill: sameRepoSkill, sameRepo: true };
-                }
-            }
-            return { installed: true, skill: sameNameSkills[0], sameRepo: false };
+        const globalSkillsDir = SkillManager.getIflowGlobalSkillsPath();
+        // 检查是否存在同名文件夹
+        const skillDirPath = path.join(globalSkillsDir, skillName);
+        if (!fs.existsSync(skillDirPath)) {
+            return { installed: false };
         }
-        return { installed: false };
+        // 检查 github_url 文件
+        const githubUrlPath = path.join(skillDirPath, "github_url");
+        if (!fs.existsSync(githubUrlPath)) {
+            return { installed: true, sameRepo: false };
+        }
+        // 读取存储的 GitHub URL
+        const storedUrl = fs.readFileSync(githubUrlPath, "utf-8").trim();
+        // 从已加载的技能中查找对应的技能对象
+        const allSkills = this.getAllSkills();
+        const skill = allSkills.find(s => s.name === skillName && s.isGlobal);
+        // 如果提供了要检查的 URL，检查是否包含在其中
+        if (githubUrl) {
+            // 检查存储的 URL 是否包含搜索结果的 URL，或者反过来
+            if (storedUrl.includes(githubUrl) || githubUrl.includes(storedUrl)) {
+                return { installed: true, skill, sameRepo: true };
+            }
+        }
+        // 同名但仓库不同
+        return { installed: true, skill, sameRepo: false };
     }
     getLocalSkills() {
         // 只返回本地技能
@@ -740,6 +755,12 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
             fs.mkdirSync(skillDirPath, { recursive: true });
             // 复制整个技能目录
             await this.copyDirectory(sourceDir, skillDirPath);
+            if (progressCallback) {
+                progressCallback("正在保存仓库地址...");
+            }
+            // 创建 github_url 文件，存储仓库地址
+            const githubUrlPath = path.join(skillDirPath, "github_url");
+            await fs.promises.writeFile(githubUrlPath, githubUrl, "utf-8");
             if (progressCallback) {
                 progressCallback("正在清理临时文件...");
             }
