@@ -4,7 +4,7 @@
   "icon": "logo.png",
   "displayName": "iFlow Skill Manager",
   "description": "Manage iFlow skills for your projects",
-  "version": "0.0.4",
+  "version": "0.0.15",
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -73,10 +73,20 @@
         "icon": "$(trash)"
       },
       {
-        "command": "iflow.install",
-        "title": "Install iFlow",
-        "icon": "$(download)"
-      }
+              "command": "iflow.install",
+              "title": "Install iFlow",
+              "icon": "$(download)"
+            },
+            {
+                          "command": "iflow.searchSkills",
+                          "title": "Search Skills Online",
+                          "icon": "$(search)"
+                        },
+                        {
+                          "command": "iflow.setGitHubToken",
+                          "title": "Set GitHub Token",
+                          "icon": "$(key)"
+                        }
     ],
     "viewsContainers": {
       "activitybar": [
@@ -94,6 +104,28 @@
           "name": "Skills"
         }
       ]
+    },
+    "configuration": {
+      "title": "iFlow",
+      "properties": {
+        "iflow.githubToken": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub Personal Access Token for searching skills. Get one from https://github.com/settings/tokens (need 'public_repo' scope).",
+          "markdownDescription": "GitHub Personal Access Token for searching skills. Get one from [GitHub Settings](https://github.com/settings/tokens) (need `public_repo` scope)."
+        },
+        "iflow.skillDataSource": {
+          "type": "string",
+          "default": "github",
+          "enum": ["github", "skillmap"],
+          "enumDescriptions": [
+            "Search skills from GitHub repositories",
+            "Search skills from SkillMap marketplace (https://skillmaps.net/market)"
+          ],
+          "description": "Data source for searching skills online",
+          "markdownDescription": "Data source for searching skills online:\n- **GitHub**: Search skills from GitHub repositories\n- **SkillMap**: Search skills from [SkillMap marketplace](https://skillmaps.net/market) (verified skills)"
+        }
+      }
     },
     "menus": {
       "view/title": [
@@ -123,10 +155,20 @@
           "group": "navigation"
         },
         {
-          "command": "iflow.install",
-          "when": "view == iflowSkillsView",
-          "group": "navigation"
-        }
+                  "command": "iflow.install",
+                  "when": "view == iflowSkillsView",
+                  "group": "navigation"
+                },
+                {
+                                  "command": "iflow.searchSkills",
+                                  "when": "view == iflowSkillsView",
+                                  "group": "navigation"
+                                },
+                                {
+                                  "command": "iflow.setGitHubToken",
+                                  "when": "view == iflowSkillsView",
+                                  "group": "navigation"
+                                }
       ],
       "view/item/context": [
         {

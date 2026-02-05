@@ -39,12 +39,14 @@ const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const skillsTreeProvider_1 = require("./skillsTreeProvider");
 const skillWebviewProvider_1 = require("./skillWebviewProvider");
+const skillSearchProvider_1 = require("./skillSearchProvider");
 const skillManager_1 = require("./skillManager");
 async function activate(context) {
     console.log("iFlow Extension is now active!");
     const skillManager = new skillManager_1.SkillManager(context);
     const skillsTreeDataProvider = new skillsTreeProvider_1.SkillsTreeDataProvider(skillManager);
     const skillWebviewProvider = new skillWebviewProvider_1.SkillWebviewProvider(context.extensionUri, skillManager);
+    const skillSearchProvider = new skillSearchProvider_1.SkillSearchProvider(context.extensionUri, skillManager);
     // 初始化时检查所有skill的同步状态
     const skills = skillManager.getAllSkills();
     for (const skill of skills) {
@@ -977,7 +979,36 @@ async function activate(context) {
         await vscode.env.openExternal(vscode.Uri.parse(openUrl));
         vscode.window.showInformationMessage("已打开 iFlow CLI 官网，请按照页面提示进行安装。", "OK");
     });
-    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, checkSyncStatusCommand, syncFromGlobalCommand, editSkillCommand, saveSkillCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand);
+    // Search skills online command
+    const searchSkillsCommand = vscode.commands.registerCommand("iflow.searchSkills", () => {
+        skillSearchProvider.showSearchPanel();
+    });
+    // Set GitHub Token command
+    const setGitHubTokenCommand = vscode.commands.registerCommand("iflow.setGitHubToken", async () => {
+        const config = vscode.workspace.getConfiguration("iflow");
+        const currentToken = config.get("githubToken", "");
+        const token = await vscode.window.showInputBox({
+            prompt: "请输入 GitHub Personal Access Token",
+            placeHolder: "ghp_xxxxxxxxxxxx",
+            value: currentToken,
+            password: true,
+            ignoreFocusOut: true,
+            validateInput: (value) => {
+                if (!value || value.trim().length === 0) {
+                    return "Token 不能为空";
+                }
+                if (!value.startsWith("ghp_") && !value.startsWith("github_pat_")) {
+                    return "Token 格式不正确，应以 ghp_ 或 github_pat_ 开头";
+                }
+                return null;
+            },
+        });
+        if (token) {
+            await config.update("githubToken", token.trim(), true);
+            vscode.window.showInformationMessage("GitHub Token 已保存！现在可以使用在线搜索功能了。");
+        }
+    });
+    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, checkSyncStatusCommand, syncFromGlobalCommand, editSkillCommand, saveSkillCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand, searchSkillsCommand, setGitHubTokenCommand);
     // 实时刷新 skill 列表（每10秒一次）
     const refreshInterval = setInterval(async () => {
         skillManager.reloadSkills();

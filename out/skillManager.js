@@ -136,7 +136,7 @@ class SkillManager {
                             const skill = {
                                 id: `global-${this.hashString(skillFilePath)}`,
                                 name: displayName,
-                                description: this.extractDescription(content) || "Global skill",
+                                description: content.substring(0, 200).split("\n")[0] || "Global skill",
                                 content: content,
                                 projectPath: globalSkillsDir,
                                 absolutePath: skillFilePath,
@@ -167,7 +167,7 @@ class SkillManager {
                         const skill = {
                             id: `global-${this.hashString(fullPath)}`,
                             name: displayName,
-                            description: this.extractDescription(content) || "Global skill",
+                            description: content.substring(0, 200).split("\n")[0] || "Global skill",
                             content: content,
                             projectPath: globalSkillsDir,
                             absolutePath: fullPath,
@@ -196,14 +196,6 @@ class SkillManager {
     clearSkills() {
         // 清空当前技能列表
         this.skills.clear();
-    }
-    extractDescription(content) {
-        // 尝试从 markdown 内容中提取描述
-        const descMatch = content.match(/##\s*Description\s*\n([\s\S]*?)(?=\n##|$)/i);
-        if (descMatch && descMatch[1]) {
-            return descMatch[1].trim();
-        }
-        return null;
     }
     async createSkill(name, description, projectPath, progressCallback) {
         if (progressCallback) {
@@ -598,6 +590,92 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         catch (error) {
             console.error(`Failed to read skill from file: ${error}`);
             return null;
+        }
+    }
+    // 从 SkillMap 技能市场搜索技能
+    async searchSkillsFromSkillMap(query, limit = 5) {
+        try {
+            // 使用 SkillMap 官方 API
+            const apiUrl = `https://skillmaps.net/v1/skills?q=${encodeURIComponent(query)}&sort=stars&page=1&limit=${limit}`;
+            const response = await fetch(apiUrl, {
+                headers: {
+                    Accept: "application/json",
+                },
+            });
+            if (!response.ok) {
+                throw new Error(`SkillMap API error: ${response.statusText}`);
+            }
+            const data = await response.json();
+            if (!data.items || data.items.length === 0) {
+                return [];
+            }
+            // 转换为 OnlineSkill 格式，保留完整的 API 数据
+            const skills = [];
+            for (const item of data.items) {
+                // 优先使用中文描述
+                const description = item.description_cn || item.description || "";
+                const authorAvatar = item.author_avatar || "";
+                skills.push({
+                    id: item.id,
+                    name: item.name,
+                    description: description,
+                    content: `# ${item.name}\n\n${description}`,
+                    url: item.github_url || `https://skillmaps.net/market#${item.name}`,
+                    repository: item.author || "SkillMap",
+                    stars: item.stars || 0,
+                    forks: item.forks || 0,
+                    createdAt: new Date((item.updated_at || Date.now()) * 1000).toISOString(),
+                    updatedAt: new Date((item.updated_at || Date.now()) * 1000).toISOString(),
+                    // 保存完整的 API 数据用于详情展示
+                    rawData: item,
+                });
+            }
+            // API 已经按 stars 排序了，直接返回
+            return skills;
+        }
+        catch (error) {
+            console.error("Error searching skills from SkillMap:", error);
+            throw error;
+        }
+    }
+    // 在线搜索技能
+    async searchSkillsOnline(query, sortBy = "popular", limit = 5) {
+        // 使用 SkillMap API 搜索技能
+        return await this.searchSkillsFromSkillMap(query, limit);
+    }
+    // 在线安装技能
+    async installOnlineSkill(onlineSkill, progressCallback) {
+        try {
+            if (progressCallback) {
+                progressCallback("正在准备安装...");
+            }
+            const globalSkillsDir = SkillManager.getIflowGlobalSkillsPath();
+            if (!fs.existsSync(globalSkillsDir)) {
+                fs.mkdirSync(globalSkillsDir, { recursive: true });
+            }
+            // 确保技能名称唯一（添加后缀避免冲突）
+            let skillName = onlineSkill.name;
+            let counter = 1;
+            while (fs.existsSync(path.join(globalSkillsDir, `${skillName}.md`))) {
+                skillName = `${onlineSkill.name}-${counter}`;
+                counter++;
+            }
+            if (progressCallback) {
+                progressCallback(`正在安装技能: ${skillName}`);
+            }
+            const skillFilePath = path.join(globalSkillsDir, `${skillName}.md`);
+            const version = this.extractVersionFromContent(onlineSkill.content);
+            const contentWithVersion = this.addVersionToContent(onlineSkill.content, version || 1);
+            await fs.promises.writeFile(skillFilePath, contentWithVersion, "utf-8");
+            if (progressCallback) {
+                progressCallback("技能安装成功！");
+            }
+            // 刷新技能列表
+            this.reloadSkills();
+        }
+        catch (error) {
+            console.error("Error installing online skill:", error);
+            throw error;
         }
     }
 }

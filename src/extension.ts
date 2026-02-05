@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { SkillsTreeDataProvider } from "./skillsTreeProvider";
 import { SkillWebviewProvider } from "./skillWebviewProvider";
+import { SkillSearchProvider } from "./skillSearchProvider";
 import { SkillManager } from "./skillManager";
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -10,6 +11,10 @@ export async function activate(context: vscode.ExtensionContext) {
   const skillManager = new SkillManager(context);
   const skillsTreeDataProvider = new SkillsTreeDataProvider(skillManager);
   const skillWebviewProvider = new SkillWebviewProvider(
+    context.extensionUri,
+    skillManager,
+  );
+  const skillSearchProvider = new SkillSearchProvider(
     context.extensionUri,
     skillManager,
   );
@@ -1118,6 +1123,47 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   );
 
+  // Search skills online command
+  const searchSkillsCommand = vscode.commands.registerCommand(
+    "iflow.searchSkills",
+    () => {
+      skillSearchProvider.showSearchPanel();
+    },
+  );
+
+  // Set GitHub Token command
+  const setGitHubTokenCommand = vscode.commands.registerCommand(
+    "iflow.setGitHubToken",
+    async () => {
+      const config = vscode.workspace.getConfiguration("iflow");
+      const currentToken = config.get<string>("githubToken", "");
+
+      const token = await vscode.window.showInputBox({
+        prompt: "请输入 GitHub Personal Access Token",
+        placeHolder: "ghp_xxxxxxxxxxxx",
+        value: currentToken,
+        password: true,
+        ignoreFocusOut: true,
+        validateInput: (value) => {
+          if (!value || value.trim().length === 0) {
+            return "Token 不能为空";
+          }
+          if (!value.startsWith("ghp_") && !value.startsWith("github_pat_")) {
+            return "Token 格式不正确，应以 ghp_ 或 github_pat_ 开头";
+          }
+          return null;
+        },
+      });
+
+      if (token) {
+        await config.update("githubToken", token.trim(), true);
+        vscode.window.showInformationMessage(
+          "GitHub Token 已保存！现在可以使用在线搜索功能了。",
+        );
+      }
+    },
+  );
+
   context.subscriptions.push(
     treeView,
     generateSkillCommand,
@@ -1133,6 +1179,8 @@ export async function activate(context: vscode.ExtensionContext) {
     viewSkillDetailCommand,
     openTerminalCommand,
     installIflowCommand,
+    searchSkillsCommand,
+    setGitHubTokenCommand,
   );
 
   // 实时刷新 skill 列表（每10秒一次）
