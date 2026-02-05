@@ -806,12 +806,22 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
     async cloneRepository(owner, repo, branch, targetDir) {
         const { execSync } = require("child_process");
         try {
-            // 使用 git clone 命令克隆指定分支
+            // 先尝试直接克隆
             const cloneUrl = `https://github.com/${owner}/${repo}.git`;
+            console.log("克隆仓库（直接）:", cloneUrl);
             execSync(`git clone --depth 1 --single-branch --branch ${branch} "${cloneUrl}" "${targetDir}"`, { stdio: "pipe" });
         }
         catch (error) {
-            throw new Error(`克隆仓库失败: ${error instanceof Error ? error.message : "未知错误"}`);
+            console.log("直接克隆失败，尝试使用代理");
+            // 如果直接克隆失败，使用代理
+            try {
+                const proxyUrl = `https://gh-proxy.com/https://github.com/${owner}/${repo}.git`;
+                console.log("克隆仓库（使用代理）:", proxyUrl);
+                execSync(`git clone --depth 1 --single-branch --branch ${branch} "${proxyUrl}" "${targetDir}"`, { stdio: "pipe" });
+            }
+            catch (proxyError) {
+                throw new Error(`克隆仓库失败（尝试了直接下载和代理）: ${proxyError instanceof Error ? proxyError.message : "未知错误"}`);
+            }
         }
     }
     // 复制整个目录
