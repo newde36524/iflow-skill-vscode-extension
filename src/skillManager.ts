@@ -538,17 +538,14 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         if (pathParts.length > 1) {
           const subfolderPath = path.join(globalSkillsDir, pathParts[0]);
 
-          // 检查子文件夹是否为空
+          // 删除整个子文件夹
           if (fs.existsSync(subfolderPath)) {
             try {
-              const files = fs.readdirSync(subfolderPath);
-              if (files.length === 0) {
-                // 子文件夹为空，删除它
-                await fs.promises.rmdir(subfolderPath);
-              }
+              await fs.promises.rm(subfolderPath, { recursive: true, force: true });
+              console.log(`已删除子文件夹: ${subfolderPath}`);
             } catch (error) {
               console.error(
-                `Error checking/deleting subfolder ${subfolderPath}:`,
+                `Error deleting subfolder ${subfolderPath}:`,
                 error,
               );
             }
@@ -801,6 +798,10 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
     progressCallback?: (message: string) => void,
   ): Promise<{ success: boolean; error?: string }> {
     try {
+      console.log("========== installSkillFromGitHub 开始 ==========");
+      console.log("GitHub URL:", githubUrl);
+      console.log("Skill Name:", skillName);
+      
       if (progressCallback) {
         progressCallback("正在解析 GitHub URL...");
       }
@@ -809,14 +810,24 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
       const urlParts = githubUrl.match(
         /github\.com\/([^\/]+)\/([^\/]+)\/tree\/([^\/]+)\/(.+)/,
       );
+      
+      console.log("URL 解析结果:", urlParts);
+      
       if (!urlParts) {
-        throw new Error("无效的 GitHub URL " + githubUrl);
+        const error = `无效的 GitHub URL: ${githubUrl}`;
+        console.error("URL 解析失败:", error);
+        throw new Error(error);
       }
 
       const [, owner, repo, branch, targetPath] = urlParts;
+      console.log("Owner:", owner);
+      console.log("Repo:", repo);
+      console.log("Branch:", branch);
+      console.log("Target Path:", targetPath);
 
       // 准备临时目录
       const tempDir = path.join(process.env.TMPDIR || "/tmp", `skill-${Date.now()}`);
+      console.log("临时目录:", tempDir);
       fs.mkdirSync(tempDir, { recursive: true });
 
       if (progressCallback) {

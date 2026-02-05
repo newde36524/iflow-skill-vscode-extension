@@ -118,7 +118,11 @@ export class SkillSearchProvider {
 
   private async handleInstall(skill: OnlineSkill) {
     try {
-      console.log("开始安装技能:", skill.name, skill.url);
+      console.log("========== 开始安装技能 ==========");
+      console.log("Skill ID:", skill.id);
+      console.log("Skill Name:", skill.name);
+      console.log("Skill URL:", skill.url);
+      console.log("Raw Data:", JSON.stringify(skill.rawData, null, 2));
       
       // 使用进度窗口显示安装过程
       await vscode.window.withProgress(
@@ -134,6 +138,7 @@ export class SkillSearchProvider {
             progress.report({ message: message });
           };
 
+          console.log("准备调用 installSkillFromGitHub...");
           // 调用 SkillManager 的安装方法
           const result = await this.skillManager.installSkillFromGitHub(
             skill.url,
@@ -141,7 +146,9 @@ export class SkillSearchProvider {
             progressCallback,
           );
 
-          console.log("安装结果:", result);
+          console.log("========== 安装结果 ==========");
+          console.log("Success:", result.success);
+          console.log("Error:", result.error);
 
           if (result.success) {
             vscode.window.showInformationMessage(
@@ -158,7 +165,8 @@ export class SkillSearchProvider {
         skillId: skill.id,
       });
     } catch (error) {
-      console.error("安装错误:", error);
+      console.error("========== 安装错误 ==========");
+      console.error("Error:", error);
       vscode.window.showErrorMessage(
         `安装失败: ${error instanceof Error ? error.message : "未知错误"}`,
       );
@@ -1078,16 +1086,35 @@ export class SkillSearchProvider {
                             来自 SkillMap 市场
                         </div>
                         <div class="skill-actions">
-                            <button class="action-btn" onclick="viewDetail('\${encodeURIComponent(JSON.stringify(skill))}')">
+                            <button class="action-btn" data-action="viewDetail" data-skill='\${JSON.stringify(skill)}'>
                                 查看详情
                             </button>
-                            <button class="action-btn install-btn" onclick="installSkill('\${encodeURIComponent(JSON.stringify(skill))}')">
+                            <button class="action-btn install-btn" data-action="installSkill" data-skill='\${JSON.stringify(skill)}'>
                                 安装
                             </button>
                         </div>
                     </div>
                 </div>
             \`).join('');
+
+            // 添加事件委托处理点击事件
+            contentArea.addEventListener('click', function(event) {
+                const btn = event.target.closest('button[data-action]');
+                if (!btn) return;
+                
+                const action = btn.dataset.action;
+                const skillData = btn.dataset.skill;
+                
+                if (!skillData) return;
+                
+                const skill = JSON.parse(skillData);
+                
+                if (action === 'viewDetail') {
+                    viewDetail(encodeURIComponent(JSON.stringify(skill)));
+                } else if (action === 'installSkill') {
+                    installSkill(encodeURIComponent(JSON.stringify(skill)));
+                }
+            });
         }
 
         function installSkill(skillEncoded) {
