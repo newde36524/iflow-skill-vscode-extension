@@ -716,6 +716,18 @@ class SkillSearchProvider {
             margin-left: 8px;
         }
 
+        .skill-stars {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--vscode-foreground);
+            background-color: var(--vscode-textCodeBlock-background);
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
         .skill-stats {
             display: flex;
             gap: 15px;
@@ -891,6 +903,32 @@ class SkillSearchProvider {
             color: var(--vscode-descriptionForeground);
         }
 
+        .load-more-btn-container {
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .load-more-btn {
+            padding: 10px 30px;
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            border: 1px solid var(--vscode-button-secondaryBorder);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: var(--vscode-font-size);
+            transition: background-color 0.2s;
+        }
+
+        .load-more-btn:hover:not(:disabled) {
+            background-color: var(--vscode-button-secondaryHoverBackground);
+        }
+
+        .load-more-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         .no-more {
             padding: 15px;
         }
@@ -1064,6 +1102,7 @@ class SkillSearchProvider {
         let isLoading = false;
         let currentQuery = '';
         let currentSortBy = 'popular';
+        let lastLoadTime = 0; // 上次加载时间戳
         
         contentArea.addEventListener('click', function(event) {
             const btn = event.target.closest('button[data-action]');
@@ -1088,32 +1127,26 @@ class SkillSearchProvider {
             }
         });
 
-        // 滚动加载更多
-        contentArea.addEventListener('scroll', function() {
-            if (isLoading || !hasMore) return;
-            
-            const scrollTop = contentArea.scrollTop;
-            const scrollHeight = contentArea.scrollHeight;
-            const clientHeight = contentArea.clientHeight;
-            
-            // 当滚动到距离底部 100px 时加载更多
-            if (scrollTop + clientHeight >= scrollHeight - 100) {
-                loadMore();
-            }
-        });
-
+        // 点击加载更多按钮
         function loadMore() {
             if (isLoading || !hasMore || !currentQuery) return;
             
+            // 速率限制：1秒内只查询一次
+            const now = Date.now();
+            if (now - lastLoadTime < 1000) {
+                return;
+            }
+            
+            lastLoadTime = now;
             isLoading = true;
             currentPage++;
             
-            // 显示加载更多提示
-            const loadMoreDiv = document.createElement('div');
-            loadMoreDiv.className = 'load-more';
-            loadMoreDiv.id = 'loadMore';
-            loadMoreDiv.innerHTML = '<div class="loading-spinner"></div><div class="loading-text">加载更多...</div>';
-            contentArea.appendChild(loadMoreDiv);
+            // 更新按钮状态为加载中
+            const loadMoreBtn = document.getElementById('loadMoreBtn');
+            if (loadMoreBtn) {
+                loadMoreBtn.disabled = true;
+                loadMoreBtn.textContent = '加载中...';
+            }
             
             vscode.postMessage({
                 command: 'search',
@@ -1139,7 +1172,8 @@ class SkillSearchProvider {
 
             switch (message.command) {
                 case 'updateLoading':
-                    if (message.loading) {
+                    // 只有在第一页搜索时才显示加载状态（清空内容）
+                    if (message.loading && currentPage === 1) {
                         showLoading();
                     }
                     break;
@@ -1150,12 +1184,6 @@ class SkillSearchProvider {
                     installedSkillsList = message.installedSkills || [];
                     hasMore = message.hasMore || false;
                     
-                    // 移除加载更多提示
-                    const loadMoreDiv = document.getElementById('loadMore');
-                    if (loadMoreDiv) {
-                        loadMoreDiv.remove();
-                    }
-                    
                     // 如果是第一页，清空内容；否则追加内容
                     if (message.page === 1) {
                         showResults(message.skills, false);
@@ -1165,10 +1193,38 @@ class SkillSearchProvider {
                     
                     // 如果没有更多数据，显示提示
                     if (!hasMore && message.skills.length > 0) {
+                        // 移除加载更多按钮容器
+                        const loadMoreBtnDiv = document.getElementById('loadMoreBtnDiv');
+                        if (loadMoreBtnDiv) {
+                            loadMoreBtnDiv.remove();
+                        }
+                        
                         const noMoreDiv = document.createElement('div');
                         noMoreDiv.className = 'no-more';
                         noMoreDiv.innerHTML = '<div class="no-more-text">没有更多技能了</div>';
                         contentArea.appendChild(noMoreDiv);
+                    }
+                    
+                    // 如果还有更多数据，显示"加载更多"按钮
+                    if (hasMore && message.skills.length > 0) {
+                        const loadMoreBtnDiv = document.getElementById('loadMoreBtnDiv');
+                        if (!loadMoreBtnDiv) {
+                            const newDiv = document.createElement('div');
+                            newDiv.className = 'load-more-btn-container';
+                            newDiv.id = 'loadMoreBtnDiv';
+                            newDiv.innerHTML = '<button class="load-more-btn" id="loadMoreBtn">加载更多</button>';
+                            contentArea.appendChild(newDiv);
+                            
+                            // 绑定点击事件
+                            document.getElementById('loadMoreBtn').addEventListener('click', loadMore);
+                        } else {
+                            // 更新按钮状态
+                            const loadMoreBtn = loadMoreBtnDiv.querySelector('.load-more-btn');
+                            if (loadMoreBtn) {
+                                loadMoreBtn.disabled = false;
+                                loadMoreBtn.textContent = '加载更多';
+                            }
+                        }
                     }
                     break;
 
@@ -1307,6 +1363,9 @@ class SkillSearchProvider {
                                 <span class="skill-author">by \${escapeHtml(skill.repository)}</span>
                                 \${isInstalled ? '<span class="installed-badge">已安装</span>' : ''}
                             </div>
+                        </div>
+                        <div class="skill-stars">
+                            ⭐ \${skill.stars || 0}
                         </div>
                     </div>
                     <div class="skill-description">\${escapeHtml(skill.description || '暂无描述')}</div>
