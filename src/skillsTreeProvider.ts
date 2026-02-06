@@ -151,7 +151,7 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
                     if (pathParts.length > 1) {
                         // 技能在子文件夹中，创建可展开的树项
                         items.push(new SkillsTreeItem(
-                            skill.name + (skill.description ? ` - ${skill.description}` : ''),
+                            skill.name,
                             vscode.TreeItemCollapsibleState.Collapsed,
                             skill,
                             skill.id
@@ -159,7 +159,7 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
                     } else {
                         // 技能在根目录，创建不可展开的树项
                         items.push(new SkillsTreeItem(
-                            skill.name + (skill.description ? ` - ${skill.description}` : ''),
+                            skill.name,
                             vscode.TreeItemCollapsibleState.None,
                             skill,
                             skill.id
@@ -168,7 +168,7 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
                 } else {
                     // 本地技能
                     items.push(new SkillsTreeItem(
-                        skill.name + (skill.description ? ` - ${skill.description}` : ''),
+                        skill.name,
                         vscode.TreeItemCollapsibleState.None,
                         skill,
                         skill.id

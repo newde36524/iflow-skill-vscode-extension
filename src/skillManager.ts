@@ -943,11 +943,10 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
       const installCheck = this.isSkillInstalled(skillName, githubUrl);
       if (installCheck.installed) {
         if (installCheck.sameRepo) {
-          console.log("技能已安装且来自相同的 GitHub 仓库，跳过安装");
-          return { success: true, alreadyInstalled: true };
+          console.log("技能已安装且来自相同的 GitHub 仓库，将进行覆盖安装");
         } else {
-          console.log("技能已安装但来自不同的 GitHub 仓库");
-          // 继续安装，使用新的名称
+          console.log("技能已安装但来自不同的 GitHub 仓库，将创建新的安装");
+          // 继续安装，会创建新的目录
         }
       }
       
@@ -1007,15 +1006,28 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         fs.mkdirSync(globalSkillsDir, { recursive: true });
       }
 
-      // 确保技能名称唯一
+      // 确定最终的技能名称和目录路径
       let finalSkillName = skillName;
-      let counter = 1;
-      while (fs.existsSync(path.join(globalSkillsDir, finalSkillName))) {
-        finalSkillName = `${skillName}-${counter}`;
-        counter++;
+      let skillDirPath = path.join(globalSkillsDir, finalSkillName);
+
+      // 如果技能已安装且来自相同仓库，则覆盖安装
+      if (installCheck.installed && installCheck.sameRepo) {
+        console.log(`相同仓库，覆盖安装: ${skillDirPath}`);
+        if (fs.existsSync(skillDirPath)) {
+          fs.rmSync(skillDirPath, { recursive: true, force: true });
+        }
+      } else if (installCheck.installed && !installCheck.sameRepo) {
+        // 技能已安装但来自不同仓库，创建新目录
+        console.log(`不同仓库，创建新目录`);
+        let counter = 1;
+        while (fs.existsSync(skillDirPath)) {
+          finalSkillName = `${skillName}-${counter}`;
+          skillDirPath = path.join(globalSkillsDir, finalSkillName);
+          counter++;
+        }
       }
 
-      const skillDirPath = path.join(globalSkillsDir, finalSkillName);
+      // 创建技能目录
       fs.mkdirSync(skillDirPath, { recursive: true });
 
       // 复制整个技能目录

@@ -162,7 +162,7 @@ class SkillSearchProvider {
                 console.log("Already Installed:", result.alreadyInstalled);
                 if (result.success) {
                     if (result.alreadyInstalled) {
-                        vscode.window.showInformationMessage(`技能 "${skill.name}" 已安装，跳过重复安装。`);
+                        vscode.window.showInformationMessage(`技能 "${skill.name}" 已存在，已更新/覆盖安装。`);
                     }
                     else {
                         vscode.window.showInformationMessage(`技能 "${skill.name}" 安装成功！`);
@@ -1486,10 +1486,19 @@ class SkillSearchProvider {
             const card = document.getElementById(\`skill-\${skillId}\`);
             if (card) {
                 card.classList.add('installed');
-                const btn = card.querySelector('.install-btn');
-                if (btn) {
-                    btn.disabled = true;
-                    btn.textContent = '已安装';
+                
+                // 处理安装按钮
+                const installBtn = card.querySelector('.install-btn');
+                if (installBtn) {
+                    installBtn.disabled = true;
+                    installBtn.textContent = '已安装';
+                }
+                
+                // 处理重装按钮
+                const reinstallBtn = card.querySelector('.reinstall-btn');
+                if (reinstallBtn) {
+                    reinstallBtn.disabled = false;
+                    reinstallBtn.textContent = '重装';
                 }
             }
         }

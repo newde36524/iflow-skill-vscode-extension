@@ -1061,31 +1061,6 @@ async function activate(context) {
     const searchSkillsCommand = vscode.commands.registerCommand("iflow.searchSkills", () => {
         skillSearchProvider.showSearchPanel();
     });
-    // Set GitHub Token command
-    const setGitHubTokenCommand = vscode.commands.registerCommand("iflow.setGitHubToken", async () => {
-        const config = vscode.workspace.getConfiguration("iflow");
-        const currentToken = config.get("githubToken", "");
-        const token = await vscode.window.showInputBox({
-            prompt: "请输入 GitHub Personal Access Token",
-            placeHolder: "ghp_xxxxxxxxxxxx",
-            value: currentToken,
-            password: true,
-            ignoreFocusOut: true,
-            validateInput: (value) => {
-                if (!value || value.trim().length === 0) {
-                    return "Token 不能为空";
-                }
-                if (!value.startsWith("ghp_") && !value.startsWith("github_pat_")) {
-                    return "Token 格式不正确，应以 ghp_ 或 github_pat_ 开头";
-                }
-                return null;
-            },
-        });
-        if (token) {
-            await config.update("githubToken", token.trim(), true);
-            vscode.window.showInformationMessage("GitHub Token 已保存！现在可以使用在线搜索功能了。");
-        }
-    });
     // 打开文件命令
     const openFileCommand = vscode.commands.registerCommand("iflow.openFile", async (filePath) => {
         try {
@@ -1096,7 +1071,7 @@ async function activate(context) {
             vscode.window.showErrorMessage(`打开文件失败: ${error instanceof Error ? error.message : "未知错误"}`);
         }
     });
-    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, openTerminalCommand, checkSyncStatusCommand, syncFromGlobalCommand, saveSkillCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand, searchSkillsCommand, setGitHubTokenCommand, openFileCommand);
+    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, openTerminalCommand, checkSyncStatusCommand, syncFromGlobalCommand, saveSkillCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand, searchSkillsCommand, openFileCommand);
     // 实时刷新 skill 列表（每10秒一次）
     const refreshInterval = setInterval(async () => {
         skillManager.reloadSkills();

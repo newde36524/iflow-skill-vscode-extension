@@ -172,16 +172,16 @@ class SkillsTreeDataProvider {
                     const pathParts = relativePath.split(path.sep);
                     if (pathParts.length > 1) {
                         // 技能在子文件夹中，创建可展开的树项
-                        items.push(new SkillsTreeItem(skill.name + (skill.description ? ` - ${skill.description}` : ''), vscode.TreeItemCollapsibleState.Collapsed, skill, skill.id));
+                        items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.Collapsed, skill, skill.id));
                     }
                     else {
                         // 技能在根目录，创建不可展开的树项
-                        items.push(new SkillsTreeItem(skill.name + (skill.description ? ` - ${skill.description}` : ''), vscode.TreeItemCollapsibleState.None, skill, skill.id));
+                        items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.None, skill, skill.id));
                     }
                 }
                 else {
                     // 本地技能
-                    items.push(new SkillsTreeItem(skill.name + (skill.description ? ` - ${skill.description}` : ''), vscode.TreeItemCollapsibleState.None, skill, skill.id));
+                    items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.None, skill, skill.id));
                 }
             });
             return Promise.resolve(items);
