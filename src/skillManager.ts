@@ -599,6 +599,14 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         }
       }
     }
+
+    // 删除 JSON 记录文件
+    const filePath = path.join(this.skillsPath, `${id}.json`);
+    if (fs.existsSync(filePath)) {
+      await fs.promises.unlink(filePath);
+    }
+
+    // 从内存中删除
     this.skills.delete(id);
   }
 
