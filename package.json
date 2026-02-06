@@ -4,7 +4,7 @@
   "icon": "logo.png",
   "displayName": "iFlow Skill Manager",
   "description": "Manage iFlow skills for your projects",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -68,25 +68,26 @@
         "icon": "$(save)"
       },
       {
-              "command": "iflow.deleteSkill",
-              "title": "Delete Skill",
-              "icon": "$(trash)"
-            },
-            {
-              "command": "iflow.install",
-              "title": "Install iFlow",
-              "icon": "$(download)"
-            },
-            {
-              "command": "iflow.searchSkills",
-              "title": "Search Skills Online",
-              "icon": "$(search)"
-            },
-            {
-              "command": "iflow.setGitHubToken",
-              "title": "Set GitHub Token",
-              "icon": "$(key)"
-            }    ],
+        "command": "iflow.deleteSkill",
+        "title": "Delete Skill",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "iflow.install",
+        "title": "Install iFlow",
+        "icon": "$(download)"
+      },
+      {
+        "command": "iflow.searchSkills",
+        "title": "Search Skills Online",
+        "icon": "$(search)"
+      },
+      {
+        "command": "iflow.setGitHubToken",
+        "title": "Set GitHub Token",
+        "icon": "$(key)"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -116,7 +117,10 @@
         "iflow.skillDataSource": {
           "type": "string",
           "default": "github",
-          "enum": ["github", "skillmap"],
+          "enum": [
+            "github",
+            "skillmap"
+          ],
           "enumDescriptions": [
             "Search skills from GitHub repositories",
             "Search skills from SkillMap marketplace (https://skillmaps.net/market)"
@@ -149,25 +153,26 @@
           "group": "navigation"
         },
         {
-                  "command": "iflow.showAllSkills",
-                  "when": "view == iflowSkillsView",
-                  "group": "navigation"
-                },
-                {
-                  "command": "iflow.install",
-                  "when": "view == iflowSkillsView",
-                  "group": "navigation"
-                },
-                {
-                  "command": "iflow.searchSkills",
-                  "when": "view == iflowSkillsView",
-                  "group": "navigation"
-                },
-                {
-                  "command": "iflow.setGitHubToken",
-                  "when": "view == iflowSkillsView",
-                  "group": "navigation"
-                }      ],
+          "command": "iflow.showAllSkills",
+          "when": "view == iflowSkillsView",
+          "group": "navigation"
+        },
+        {
+          "command": "iflow.install",
+          "when": "view == iflowSkillsView",
+          "group": "navigation"
+        },
+        {
+          "command": "iflow.searchSkills",
+          "when": "view == iflowSkillsView",
+          "group": "navigation"
+        },
+        {
+          "command": "iflow.setGitHubToken",
+          "when": "view == iflowSkillsView",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
         {
           "command": "iflow.checkSyncStatus",
