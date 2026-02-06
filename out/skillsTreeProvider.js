@@ -80,6 +80,8 @@ class SkillsTreeItem extends vscode.TreeItem {
 🌍 全局版本: v${skill.globalVersion ?? '未同步'}
 📊 状态: ${statusLabel}
 ${skill.isGlobal ? '🌟 类型: 全局技能' : '🔹 类型: 本地技能'}`;
+            // 技能项不设置 command，只能通过箭头展开或查看详情
+            this.command = undefined;
         }
         else if (filePath) {
             // 文件夹或文件项
@@ -87,17 +89,20 @@ ${skill.isGlobal ? '🌟 类型: 全局技能' : '🔹 类型: 本地技能'}`;
                 this.contextValue = 'file';
                 this.iconPath = new vscode.ThemeIcon('file');
                 this.tooltip = filePath;
+                // 只有点击文件时才打开
+                this.command = {
+                    command: 'iflow.openFile',
+                    title: 'Open File',
+                    arguments: [filePath]
+                };
             }
             else {
                 this.contextValue = 'folder';
                 this.iconPath = new vscode.ThemeIcon('folder');
                 this.tooltip = filePath;
+                // 文件夹不设置 command，只能通过箭头展开
+                this.command = undefined;
             }
-            this.command = {
-                command: 'iflow.openFile',
-                title: 'Open File',
-                arguments: [filePath]
-            };
         }
         else {
             this.contextValue = 'category';
@@ -166,21 +171,27 @@ class SkillsTreeDataProvider {
             const items = [];
             sortedSkills.forEach(skill => {
                 // 检查是否是全局技能且项目路径是子文件夹
-                if (skill.isGlobal && skill.projectPath) {
+                if (skill.isGlobal && skill.absolutePath) {
                     const globalSkillsDir = SkillsTreeDataProvider.getIflowGlobalSkillsPath();
-                    const relativePath = path.relative(globalSkillsDir, skill.projectPath);
-                    const pathParts = relativePath.split(path.sep);
-                    if (pathParts.length > 1) {
-                        // 技能在子文件夹中，创建可展开的树项
-                        items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.Collapsed, skill, skill.id));
+                    const skillDir = path.dirname(skill.absolutePath);
+                    console.log(`[SkillsTreeProvider] 技能: ${skill.name}`);
+                    console.log(`[SkillsTreeProvider]   absolutePath: ${skill.absolutePath}`);
+                    console.log(`[SkillsTreeProvider]   skillDir: ${skillDir}`);
+                    console.log(`[SkillsTreeProvider]   globalSkillsDir: ${globalSkillsDir}`);
+                    // 判断 SKILL.md 的父目录是否就是全局技能根目录
+                    if (skillDir === globalSkillsDir) {
+                        // SKILL.md 在根目录，不可展开
+                        console.log(`[SkillsTreeProvider]   -> 在根目录，设置为不可展开`);
+                        items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.None, skill, skill.id));
                     }
                     else {
-                        // 技能在根目录，创建不可展开的树项
-                        items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.None, skill, skill.id));
+                        // SKILL.md 在子文件夹中，可展开
+                        console.log(`[SkillsTreeProvider]   -> 在子文件夹中，设置为可展开`);
+                        items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.Collapsed, skill, skill.id));
                     }
                 }
                 else {
-                    // 本地技能
+                    // 本地技能或没有 absolutePath
                     items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.None, skill, skill.id));
                 }
             });
@@ -189,6 +200,10 @@ class SkillsTreeDataProvider {
         else if (element.skill && element.skill.projectPath) {
             // 展开技能子文件夹
             return this.getSkillFolderContents(element.skill.projectPath);
+        }
+        else if (element.filePath && !element.isFile) {
+            // 展开子文件夹
+            return this.getSkillFolderContents(element.filePath);
         }
         return Promise.resolve([]);
     }
