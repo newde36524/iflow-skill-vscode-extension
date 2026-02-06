@@ -17,6 +17,8 @@ export interface Skill {
   syncStatus: "synced" | "modified" | "outdated" | "new";
   isGlobal?: boolean; // 标记是否为全局技能
   rawData?: any; // 保存完整的 API 数据
+  githubDescription?: string; // GitHub 技能的备注信息
+  descriptionCn?: string; // data.json 中的中文描述
 }
 
 export interface ImportResult {
@@ -147,13 +149,18 @@ export class SkillManager {
             const version = this.extractVersionFromContent(content);
             const stats = fs.statSync(skillFilePath);
 
-            // 读取 github_url 文件（如果存在）
-            const githubUrlPath = path.join(skillDirPath, "github_url");
-            let githubUrl = "";
-            let rawData: any = {};
-            if (fs.existsSync(githubUrlPath)) {
-              githubUrl = fs.readFileSync(githubUrlPath, "utf-8").trim();
-              rawData.github_url = githubUrl;
+            // 读取 data.json 文件（如果存在）
+            const dataJsonPath = path.join(skillDirPath, "data.json");
+            let skillData: any = {};
+            let githubDescription = "";
+            if (fs.existsSync(dataJsonPath)) {
+              try {
+                skillData = JSON.parse(fs.readFileSync(dataJsonPath, "utf-8"));
+                // 从 data.json 中提取描述信息
+                githubDescription = skillData.description_cn || skillData.description || "";
+              } catch (error) {
+                console.error(`Error reading data.json from ${skillDirPath}:`, error);
+              }
             }
 
             const skill: Skill = {
@@ -169,7 +176,8 @@ export class SkillManager {
               syncStatus: "synced",
               globalVersion: version || 1,
               isGlobal: true,
-              rawData: rawData,
+              rawData: skillData,
+              githubDescription: githubDescription,
             };
 
             this.skills.set(skill.id, skill);
@@ -511,29 +519,36 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
     return Array.from(this.skills.values());
   }
 
-  // 检查技能是否已安装（通过文件夹名称和 github_url 文件）
+  // 检查技能是否已安装（通过文件夹名称和 data.json 文件）
   isSkillInstalled(skillName: string, githubUrl?: string): { installed: boolean; skill?: Skill; sameRepo?: boolean } {
     const globalSkillsDir = SkillManager.getIflowGlobalSkillsPath();
-    
+
     // 检查是否存在同名文件夹
     const skillDirPath = path.join(globalSkillsDir, skillName);
     if (!fs.existsSync(skillDirPath)) {
       return { installed: false };
     }
-    
-    // 检查 github_url 文件
-    const githubUrlPath = path.join(skillDirPath, "github_url");
-    if (!fs.existsSync(githubUrlPath)) {
+
+    // 检查 data.json 文件
+    const dataJsonPath = path.join(skillDirPath, "data.json");
+    if (!fs.existsSync(dataJsonPath)) {
       return { installed: true, sameRepo: false };
     }
-    
-    // 读取存储的 GitHub URL
-    const storedUrl = fs.readFileSync(githubUrlPath, "utf-8").trim();
-    
+
+    // 读取存储的数据
+    let storedUrl = "";
+    try {
+      const data = JSON.parse(fs.readFileSync(dataJsonPath, "utf-8"));
+      storedUrl = data.github_url || "";
+    } catch (error) {
+      console.error(`Error reading data.json from ${skillDirPath}:`, error);
+      return { installed: true, sameRepo: false };
+    }
+
     // 从已加载的技能中查找对应的技能对象
     const allSkills = this.getAllSkills();
     const skill = allSkills.find(s => s.name === skillName && s.isGlobal);
-    
+
     // 如果提供了要检查的 URL，检查是否包含在其中
     if (githubUrl) {
       // 检查存储的 URL 是否包含搜索结果的 URL，或者反过来
@@ -541,7 +556,7 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         return { installed: true, skill, sameRepo: true };
       }
     }
-    
+
     // 同名但仓库不同
     return { installed: true, skill, sameRepo: false };
   }
@@ -808,10 +823,30 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
 
     try {
       const content = await fs.promises.readFile(skill.absolutePath, "utf-8");
+      
+      // 读取 data.json 文件的 description_cn 字段
+      let descriptionCn = "";
+      if (skill.isGlobal) {
+        // 对于全局技能，data.json 可能在技能目录中
+        const skillDir = path.dirname(skill.absolutePath);
+        const dataJsonPath = path.join(skillDir, "data.json");
+        
+        if (fs.existsSync(dataJsonPath)) {
+          try {
+            const dataJsonContent = await fs.promises.readFile(dataJsonPath, "utf-8");
+            const dataJson = JSON.parse(dataJsonContent);
+            descriptionCn = dataJson.description_cn || "";
+          } catch (error) {
+            console.error(`Failed to read data.json: ${error}`);
+          }
+        }
+      }
+      
       // 返回更新了内容的 skill 对象
       return {
         ...skill,
         content: content,
+        descriptionCn: descriptionCn,
       };
     } catch (error) {
       console.error(`Failed to read skill from file: ${error}`);
@@ -896,6 +931,7 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
   async installSkillFromGitHub(
     githubUrl: string,
     skillName: string,
+    skillData?: any,
     progressCallback?: (message: string) => void,
   ): Promise<{ success: boolean; error?: string; alreadyInstalled?: boolean }> {
     try {
@@ -989,9 +1025,11 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         progressCallback("正在保存仓库地址...");
       }
 
-      // 创建 github_url 文件，存储仓库地址
-      const githubUrlPath = path.join(skillDirPath, "github_url");
-      await fs.promises.writeFile(githubUrlPath, githubUrl, "utf-8");
+      // 创建 data.json 文件，存储完整的技能数据
+      if (skillData) {
+        const dataPath = path.join(skillDirPath, "data.json");
+        await fs.promises.writeFile(dataPath, JSON.stringify(skillData, null, 2), "utf-8");
+      }
 
       if (progressCallback) {
         progressCallback("正在清理临时文件...");

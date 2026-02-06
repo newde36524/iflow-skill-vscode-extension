@@ -160,6 +160,7 @@ export class SkillSearchProvider {
           const result = await this.skillManager.installSkillFromGitHub(
             skill.url,
             skill.name,
+            skill.rawData,
             progressCallback,
           );
 
@@ -829,6 +830,22 @@ export class SkillSearchProvider {
             opacity: 0.6;
         }
 
+        .reinstall-btn {
+            background-color: #dcdcaa;
+            color: #1e1e1e;
+            border: none;
+        }
+
+        .reinstall-btn:hover {
+            background-color: #c9c68a;
+        }
+
+        .reinstall-btn:disabled {
+            background-color: var(--vscode-descriptionForeground);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
         .skill-meta {
             font-size: 11px;
             color: var(--vscode-descriptionForeground);
@@ -1157,6 +1174,8 @@ export class SkillSearchProvider {
                 });
             } else if (action === 'installSkill') {
                 installSkill(encodeURIComponent(JSON.stringify(skill)));
+            } else if (action === 'reinstallSkill') {
+                reinstallSkill(encodeURIComponent(JSON.stringify(skill)));
             }
         });
 
@@ -1400,7 +1419,7 @@ export class SkillSearchProvider {
                 
                 // 检查是否已安装
                 const isInstalled = installedSkillsList.includes(skill.id);
-                
+
                 card.innerHTML = \`
                     <div class="skill-header">
                         <div>
@@ -1424,9 +1443,15 @@ export class SkillSearchProvider {
                             <button class="action-btn" data-action="viewDetail">
                                 查看详情
                             </button>
-                            <button class="action-btn install-btn \${isInstalled ? 'disabled' : ''}" data-action="installSkill" \${isInstalled ? 'disabled' : ''}>
-                                \${isInstalled ? '已安装' : '安装'}
+                            \${isInstalled ? \`
+                            <button class="action-btn reinstall-btn" data-action="reinstallSkill">
+                                重装
                             </button>
+                            \` : \`
+                            <button class="action-btn install-btn" data-action="installSkill">
+                                安装
+                            </button>
+                            \`}
                         </div>
                     </div>
                 \`;
@@ -1468,6 +1493,22 @@ export class SkillSearchProvider {
             const skill = JSON.parse(decodeURIComponent(skillEncoded));
             vscode.postMessage({
                 command: 'viewDetail',
+                skill: skill
+            });
+        }
+
+        function reinstallSkill(skillEncoded) {
+            console.log('reinstallSkill called with:', skillEncoded);
+            const skill = JSON.parse(decodeURIComponent(skillEncoded));
+            console.log('Parsed skill for reinstall:', skill);
+            const btn = document.querySelector(\`#skill-\${skill.id} .reinstall-btn\`);
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = '重装中...';
+            }
+
+            vscode.postMessage({
+                command: 'install',
                 skill: skill
             });
         }

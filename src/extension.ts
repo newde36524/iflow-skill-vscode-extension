@@ -262,6 +262,19 @@ export async function activate(context: vscode.ExtensionContext) {
         </div>
     </div>
     
+    <h2>基本信息</h2>
+    <div class="detail-row">
+        <span class="detail-label">描述:</span>
+        <span class="detail-value">${skill.description || "无"}</span>
+    </div>
+    ${skill.descriptionCn ? `
+    <div class="detail-row">
+        <span class="detail-label">中文描述:</span>
+        <span class="detail-value">${skill.descriptionCn}</span>
+    </div>
+    ` : ''}
+    
+    <h2>技能内容预览</h2>
     <div class="content-preview">${skill.content}</div>
     
     <script>
@@ -692,6 +705,18 @@ export async function activate(context: vscode.ExtensionContext) {
                 <span class="detail-label">描述:</span>
                 <span class="detail-value">${skill.description || "无"}</span>
             </div>
+            ${skill.descriptionCn ? `
+            <div class="detail-row">
+                <span class="detail-label">中文描述:</span>
+                <span class="detail-value">${skill.descriptionCn}</span>
+            </div>
+            ` : ''}
+            ${skill.githubDescription ? `
+            <div class="detail-row">
+                <span class="detail-label">GitHub 备注:</span>
+                <span class="detail-value"><div class="info-box">${skill.githubDescription}</div></span>
+            </div>
+            ` : ''}
             <div class="detail-row">
                 <span class="detail-label">类型:</span>
                 <span class="detail-value">${skill.isGlobal ? '<span class="status-badge status-synced">全局技能</span>' : "本地技能"}</span>
@@ -1016,7 +1041,34 @@ export async function activate(context: vscode.ExtensionContext) {
     <div class="button-container">
         <button class="btn-secondary" id="editBtn">编辑</button>
     </div>
+
+    <h2>基本信息</h2>
+    <div class="detail-row">
+        <span class="detail-label">描述:</span>
+        <span class="detail-value">${skill.description || "无"}</span>
+    </div>
+    ${skill.descriptionCn ? `
+    <div class="detail-row">
+        <span class="detail-label">中文描述:</span>
+        <span class="detail-value">${skill.descriptionCn}</span>
+    </div>
+    ` : ''}
+    ${skill.githubDescription ? `
+    <div class="detail-row">
+        <span class="detail-label">GitHub 备注:</span>
+        <span class="detail-value">${skill.githubDescription}</span>
+    </div>
+    ` : ''}
+    <div class="detail-row">
+        <span class="detail-label">类型:</span>
+        <span class="detail-value">${skill.isGlobal ? "全局技能" : "本地技能"}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">版本:</span>
+        <span class="detail-value">v${skill.version}</span>
+    </div>
     
+    <h2>技能内容</h2>
     <div class="content-preview">${skill.content}</div>
     
     <script>
@@ -1192,14 +1244,29 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   );
 
+  // 打开文件命令
+  const openFileCommand = vscode.commands.registerCommand(
+    "iflow.openFile",
+    async (filePath: string) => {
+      try {
+        const uri = vscode.Uri.file(filePath);
+        await vscode.commands.executeCommand("vscode.open", uri);
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `打开文件失败: ${error instanceof Error ? error.message : "未知错误"}`
+        );
+      }
+    },
+  );
+
   context.subscriptions.push(
     treeView,
     generateSkillCommand,
     refreshSkillsCommand,
     clearSkillsCommand,
+    openTerminalCommand,
     checkSyncStatusCommand,
     syncFromGlobalCommand,
-    editSkillCommand,
     saveSkillCommand,
     deleteSkillCommand,
     openSkillEditorCommand,
@@ -1209,6 +1276,7 @@ export async function activate(context: vscode.ExtensionContext) {
     installIflowCommand,
     searchSkillsCommand,
     setGitHubTokenCommand,
+    openFileCommand,
   );
 
   // 实时刷新 skill 列表（每10秒一次）

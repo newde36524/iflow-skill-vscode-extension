@@ -7,12 +7,15 @@ export class SkillsTreeItem extends vscode.TreeItem {
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
         public readonly skill?: Skill,
-        public readonly id?: string
+        public readonly id?: string,
+        public readonly filePath?: string,
+        public readonly isFile?: boolean
     ) {
         super(label, collapsibleState);
-        this.contextValue = skill ? 'skill' : 'category';
         
+        // 设置 contextValue
         if (skill) {
+            this.contextValue = 'skill';
             this.id = skill.id;
             
             // 保留原来的绿色圆点图标（根据是否匹配当前工作区）
@@ -50,7 +53,24 @@ export class SkillsTreeItem extends vscode.TreeItem {
 🌍 全局版本: v${skill.globalVersion ?? '未同步'}
 📊 状态: ${statusLabel}
 ${skill.isGlobal ? '🌟 类型: 全局技能' : '🔹 类型: 本地技能'}`;
+        } else if (filePath) {
+            // 文件夹或文件项
+            if (isFile) {
+                this.contextValue = 'file';
+                this.iconPath = new vscode.ThemeIcon('file');
+                this.tooltip = filePath;
+            } else {
+                this.contextValue = 'folder';
+                this.iconPath = new vscode.ThemeIcon('folder');
+                this.tooltip = filePath;
+            }
+            this.command = {
+                command: 'iflow.openFile',
+                title: 'Open File',
+                arguments: [filePath]
+            };
         } else {
+            this.contextValue = 'category';
             this.iconPath = new vscode.ThemeIcon('folder');
         }
     }
@@ -119,17 +139,93 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
                 return 0;
             });
 
-            return Promise.resolve(
-                sortedSkills.map(skill => new SkillsTreeItem(
-                    skill.name + (skill.description ? ` - ${skill.description}` : ''),
-                    vscode.TreeItemCollapsibleState.None,
-                    skill,
-                    skill.id
-                ))
-            );
-        } else {
-            // No children for skill items
+            const items: SkillsTreeItem[] = [];
+            
+            sortedSkills.forEach(skill => {
+                // 检查是否是全局技能且项目路径是子文件夹
+                if (skill.isGlobal && skill.projectPath) {
+                    const globalSkillsDir = SkillsTreeDataProvider.getIflowGlobalSkillsPath();
+                    const relativePath = path.relative(globalSkillsDir, skill.projectPath);
+                    const pathParts = relativePath.split(path.sep);
+                    
+                    if (pathParts.length > 1) {
+                        // 技能在子文件夹中，创建可展开的树项
+                        items.push(new SkillsTreeItem(
+                            skill.name + (skill.description ? ` - ${skill.description}` : ''),
+                            vscode.TreeItemCollapsibleState.Collapsed,
+                            skill,
+                            skill.id
+                        ));
+                    } else {
+                        // 技能在根目录，创建不可展开的树项
+                        items.push(new SkillsTreeItem(
+                            skill.name + (skill.description ? ` - ${skill.description}` : ''),
+                            vscode.TreeItemCollapsibleState.None,
+                            skill,
+                            skill.id
+                        ));
+                    }
+                } else {
+                    // 本地技能
+                    items.push(new SkillsTreeItem(
+                        skill.name + (skill.description ? ` - ${skill.description}` : ''),
+                        vscode.TreeItemCollapsibleState.None,
+                        skill,
+                        skill.id
+                    ));
+                }
+            });
+            
+            return Promise.resolve(items);
+        } else if (element.skill && element.skill.projectPath) {
+            // 展开技能子文件夹
+            return this.getSkillFolderContents(element.skill.projectPath);
+        }
+        
+        return Promise.resolve([]);
+    }
+    
+    private getSkillFolderContents(folderPath: string): Thenable<SkillsTreeItem[]> {
+        const fs = require('fs');
+        const items: SkillsTreeItem[] = [];
+        
+        if (!fs.existsSync(folderPath)) {
             return Promise.resolve([]);
         }
+        
+        const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+        
+        entries.forEach((entry: any) => {
+            const fullPath = path.join(folderPath, entry.name);
+            
+            if (entry.isDirectory()) {
+                items.push(new SkillsTreeItem(
+                    entry.name,
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    undefined,
+                    undefined,
+                    fullPath,
+                    false
+                ));
+            } else if (entry.isFile()) {
+                items.push(new SkillsTreeItem(
+                    entry.name,
+                    vscode.TreeItemCollapsibleState.None,
+                    undefined,
+                    undefined,
+                    fullPath,
+                    true
+                ));
+            }
+        });
+        
+        // 排序：文件夹在前，文件在后
+        items.sort((a, b) => {
+            if (a.isFile && !b.isFile) return 1;
+            if (!a.isFile && b.isFile) return -1;
+            return a.label.localeCompare(b.label);
+        });
+        
+        return Promise.resolve(items);
     }
 }
