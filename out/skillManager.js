@@ -470,11 +470,22 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         return Array.from(this.skills.values()).filter((skill) => skill.isGlobal);
     }
     async deleteSkill(id) {
+        const skill = this.skills.get(id);
+        if (!skill) {
+            console.warn(`[deleteSkill] Skill not found: ${id}`);
+            return;
+        }
+        // 1. 删除项目本地的 skill 文件
+        await this.deleteProjectLocalSkill(id);
+        // 2. 删除 JSON 记录文件
         const filePath = path.join(this.skillsPath, `${id}.json`);
         if (fs.existsSync(filePath)) {
             await fs.promises.unlink(filePath);
+            console.log(`[deleteSkill] Successfully deleted JSON record: ${filePath}`);
         }
+        // 3. 从内存中删除
         this.skills.delete(id);
+        console.log(`[deleteSkill] Removed from memory, total skills: ${this.skills.size}`);
     }
     async deleteSkillFromGlobal(id) {
         const skill = this.skills.get(id);
