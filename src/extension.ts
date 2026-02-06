@@ -504,6 +504,8 @@ export async function activate(context: vscode.ExtensionContext) {
         if (skill.isGlobal) {
           // 删除全局技能文件
           await skillManager.deleteSkillFromGlobal(skillItem.id);
+          // 重新加载技能列表，确保删除操作立即生效
+          skillManager.reloadSkills();
           skillsTreeDataProvider.refresh();
           vscode.window.showInformationMessage(
             `Global skill "${skill.name}" deleted!`,
@@ -511,6 +513,8 @@ export async function activate(context: vscode.ExtensionContext) {
         } else {
           // 删除本地技能
           await skillManager.deleteSkill(skillItem.id);
+          // 重新加载技能列表，确保删除操作立即生效
+          skillManager.reloadSkills();
           skillsTreeDataProvider.refresh();
           vscode.window.showInformationMessage(`Skill "${skill.name}" deleted!`);
         }

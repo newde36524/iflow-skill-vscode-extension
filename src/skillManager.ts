@@ -566,36 +566,59 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
 
   async deleteSkillFromGlobal(id: string): Promise<void> {
     const skill = this.skills.get(id);
-    if (skill && skill.isGlobal && skill.absolutePath) {
-      // 删除全局技能文件
-      if (fs.existsSync(skill.absolutePath)) {
-        await fs.promises.unlink(skill.absolutePath);
+    if (!skill) {
+      console.warn(`[deleteSkillFromGlobal] Skill not found: ${id}`);
+      return;
+    }
 
-        // 检查技能是否在子文件夹内，如果是则删除整个子文件夹
-        const config = vscode.workspace.getConfiguration("iflow");
-        const globalSkillsDir =
-          config.get<string>("globalSkillsPath") ||
-          path.join(process.env.HOME || "", ".iflow", "skills");
+    console.log(`[deleteSkillFromGlobal] Deleting skill: ${skill.name}, isGlobal: ${skill.isGlobal}`);
 
-        const relativePath = path.relative(globalSkillsDir, skill.absolutePath);
-        const pathParts = relativePath.split(path.sep);
+    if (skill.isGlobal && skill.absolutePath) {
+      // 获取全局技能目录
+      const config = vscode.workspace.getConfiguration("iflow");
+      const globalSkillsDir =
+        config.get<string>("globalSkillsPath") ||
+        path.join(process.env.HOME || "", ".iflow", "skills");
 
-        // 如果技能在子文件夹内（即路径包含子目录）
-        if (pathParts.length > 1) {
-          const subfolderPath = path.join(globalSkillsDir, pathParts[0]);
+      console.log(`[deleteSkillFromGlobal] Global skills dir: ${globalSkillsDir}`);
+      console.log(`[deleteSkillFromGlobal] Skill absolute path: ${skill.absolutePath}`);
 
-          // 删除整个子文件夹
-          if (fs.existsSync(subfolderPath)) {
-            try {
-              await fs.promises.rm(subfolderPath, { recursive: true, force: true });
-              console.log(`已删除子文件夹: ${subfolderPath}`);
-            } catch (error) {
-              console.error(
-                `Error deleting subfolder ${subfolderPath}:`,
-                error,
-              );
-            }
+      // 计算相对路径
+      const relativePath = path.relative(globalSkillsDir, skill.absolutePath);
+      const pathParts = relativePath.split(path.sep);
+
+      console.log(`[deleteSkillFromGlobal] Relative path: ${relativePath}`);
+      console.log(`[deleteSkillFromGlobal] Path parts: ${JSON.stringify(pathParts)}`);
+
+      // 如果技能在子文件夹内（即路径包含子目录）
+      if (pathParts.length > 1) {
+        const subfolderPath = path.join(globalSkillsDir, pathParts[0]);
+        console.log(`[deleteSkillFromGlobal] Skill in subfolder, deleting: ${subfolderPath}`);
+
+        // 删除整个子文件夹
+        if (fs.existsSync(subfolderPath)) {
+          try {
+            await fs.promises.rm(subfolderPath, { recursive: true, force: true });
+            console.log(`[deleteSkillFromGlobal] Successfully deleted subfolder: ${subfolderPath}`);
+          } catch (error) {
+            console.error(`[deleteSkillFromGlobal] Error deleting subfolder ${subfolderPath}:`, error);
           }
+        } else {
+          console.warn(`[deleteSkillFromGlobal] Subfolder not found: ${subfolderPath}`);
+        }
+      } else {
+        // 技能文件直接在全局技能目录的根目录
+        console.log(`[deleteSkillFromGlobal] Skill in root, deleting file: ${skill.absolutePath}`);
+
+        if (fs.existsSync(skill.absolutePath)) {
+          try {
+            await fs.promises.unlink(skill.absolutePath);
+            console.log(`[deleteSkillFromGlobal] Successfully deleted file: ${skill.absolutePath}`);
+          } catch (error) {
+            console.error(`[deleteSkillFromGlobal] Error deleting file ${skill.absolutePath}:`, error);
+          }
+        } else {
+          console.warn(`[deleteSkillFromGlobal] File not found: ${skill.absolutePath}`);
         }
       }
     }
@@ -603,11 +626,19 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
     // 删除 JSON 记录文件
     const filePath = path.join(this.skillsPath, `${id}.json`);
     if (fs.existsSync(filePath)) {
-      await fs.promises.unlink(filePath);
+      try {
+        await fs.promises.unlink(filePath);
+        console.log(`[deleteSkillFromGlobal] Successfully deleted JSON record: ${filePath}`);
+      } catch (error) {
+        console.error(`[deleteSkillFromGlobal] Error deleting JSON record ${filePath}:`, error);
+      }
+    } else {
+      console.warn(`[deleteSkillFromGlobal] JSON record not found: ${filePath}`);
     }
 
     // 从内存中删除
     this.skills.delete(id);
+    console.log(`[deleteSkillFromGlobal] Removed from memory, total skills: ${this.skills.size}`);
   }
 
   async removeSkillFromList(id: string): Promise<void> {
