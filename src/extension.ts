@@ -514,15 +514,25 @@ export async function activate(context: vscode.ExtensionContext) {
       );
 
       if (choice?.title === "Delete") {
-        // 同时删除全局和本地技能，确保彻底删除
-        await skillManager.deleteSkillFromGlobal(skillItem.id);
-        await skillManager.deleteSkill(skillItem.id);
-        
-        // 重新加载技能列表，确保删除操作立即生效
-        skillManager.reloadSkills();
-        skillsTreeDataProvider.refresh();
-        
-        vscode.window.showInformationMessage(`Skill "${skill.name}" deleted!`);
+        try {
+          // 根据技能类型执行不同的删除逻辑
+          if (skill.isGlobal) {
+            // 全局技能：只删除全局文件和记录
+            await skillManager.deleteSkillFromGlobal(skillItem.id);
+          } else {
+            // 本地技能：只删除本地文件和记录
+            await skillManager.deleteSkill(skillItem.id);
+          }
+
+          // 重新加载技能列表，确保删除操作立即生效
+          skillManager.reloadSkills();
+          skillsTreeDataProvider.refresh();
+
+          vscode.window.showInformationMessage(`Skill "${skill.name}" deleted!`);
+        } catch (error) {
+          console.error("Failed to delete skill:", error);
+          vscode.window.showErrorMessage(`Failed to delete skill "${skill.name}": ${error instanceof Error ? error.message : "Unknown error"}`);
+        }
       }
     },
   );

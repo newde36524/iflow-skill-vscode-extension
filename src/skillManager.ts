@@ -584,8 +584,14 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
     // 2. 删除 JSON 记录文件
     const filePath = path.join(this.skillsPath, `${id}.json`);
     if (fs.existsSync(filePath)) {
-      await fs.promises.unlink(filePath);
-      console.log(`[deleteSkill] Successfully deleted JSON record: ${filePath}`);
+      try {
+        await fs.promises.unlink(filePath);
+        console.log(`[deleteSkill] Successfully deleted JSON record: ${filePath}`);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`[deleteSkill] Error deleting JSON record ${filePath}:`, error);
+        throw new Error(`Failed to delete JSON record: ${errorMessage}`);
+      }
     }
 
     // 3. 从内存中删除
@@ -607,14 +613,18 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
       const config = vscode.workspace.getConfiguration("iflow");
       const globalSkillsDir =
         config.get<string>("globalSkillsPath") ||
-        path.join(process.env.HOME || "", ".iflow", "skills");
+        path.join(process.env.HOME || process.env.USERPROFILE || "", ".iflow", "skills");
 
       console.log(`[deleteSkillFromGlobal] Global skills dir: ${globalSkillsDir}`);
       console.log(`[deleteSkillFromGlobal] Skill absolute path: ${skill.absolutePath}`);
 
+      // 标准化路径，确保使用相同的分隔符
+      const normalizedGlobalDir = path.normalize(globalSkillsDir);
+      const normalizedSkillPath = path.normalize(skill.absolutePath);
+
       // 计算相对路径
-      const relativePath = path.relative(globalSkillsDir, skill.absolutePath);
-      const pathParts = relativePath.split(path.sep);
+      const relativePath = path.relative(normalizedGlobalDir, normalizedSkillPath);
+      const pathParts = relativePath.split(path.sep).filter(p => p && p !== ".");
 
       console.log(`[deleteSkillFromGlobal] Relative path: ${relativePath}`);
       console.log(`[deleteSkillFromGlobal] Path parts: ${JSON.stringify(pathParts)}`);
@@ -630,7 +640,9 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
             await fs.promises.rm(subfolderPath, { recursive: true, force: true });
             console.log(`[deleteSkillFromGlobal] Successfully deleted subfolder: ${subfolderPath}`);
           } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
             console.error(`[deleteSkillFromGlobal] Error deleting subfolder ${subfolderPath}:`, error);
+            throw new Error(`Failed to delete subfolder: ${errorMessage}`);
           }
         } else {
           console.warn(`[deleteSkillFromGlobal] Subfolder not found: ${subfolderPath}`);
@@ -644,7 +656,9 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
             await fs.promises.unlink(skill.absolutePath);
             console.log(`[deleteSkillFromGlobal] Successfully deleted file: ${skill.absolutePath}`);
           } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
             console.error(`[deleteSkillFromGlobal] Error deleting file ${skill.absolutePath}:`, error);
+            throw new Error(`Failed to delete file: ${errorMessage}`);
           }
         } else {
           console.warn(`[deleteSkillFromGlobal] File not found: ${skill.absolutePath}`);
@@ -659,7 +673,9 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
         await fs.promises.unlink(filePath);
         console.log(`[deleteSkillFromGlobal] Successfully deleted JSON record: ${filePath}`);
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         console.error(`[deleteSkillFromGlobal] Error deleting JSON record ${filePath}:`, error);
+        throw new Error(`Failed to delete JSON record: ${errorMessage}`);
       }
     } else {
       console.warn(`[deleteSkillFromGlobal] JSON record not found: ${filePath}`);
