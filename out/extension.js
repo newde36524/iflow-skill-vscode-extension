@@ -37,6 +37,7 @@ exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
 const skillsTreeProvider_1 = require("./skillsTreeProvider");
 const skillWebviewProvider_1 = require("./skillWebviewProvider");
 const skillSearchProvider_1 = require("./skillSearchProvider");
@@ -1073,7 +1074,143 @@ async function activate(context) {
             vscode.window.showErrorMessage(`打开文件失败: ${error instanceof Error ? error.message : "未知错误"}`);
         }
     });
-    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, openTerminalCommand, checkSyncStatusCommand, syncFromGlobalCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand, searchSkillsCommand, openFileCommand);
+    // 新增文件命令
+    const createFileCommand = vscode.commands.registerCommand("iflow.createFile", async (treeItem) => {
+        const folderPath = treeItem.filePath || treeItem.skill?.projectPath;
+        if (!folderPath) {
+            vscode.window.showErrorMessage("无法确定目标文件夹");
+            return;
+        }
+        const fileName = await vscode.window.showInputBox({
+            prompt: "请输入文件名",
+            placeHolder: "例如: newfile.md",
+            validateInput: (value) => {
+                if (!value || value.trim() === "") {
+                    return "文件名不能为空";
+                }
+                if (value.includes("/") || value.includes("\\") || value.includes(":") || value.includes("*") || value.includes("?") || value.includes("\"") || value.includes("<") || value.includes(">") || value.includes("|")) {
+                    return "文件名包含非法字符";
+                }
+                return null;
+            }
+        });
+        if (!fileName) {
+            return;
+        }
+        const filePath = path.join(folderPath, fileName);
+        try {
+            await fs.promises.writeFile(filePath, "", "utf-8");
+            skillsTreeDataProvider.refresh();
+            vscode.window.showInformationMessage(`文件 "${fileName}" 已创建`);
+            // 自动打开新创建的文件
+            const uri = vscode.Uri.file(filePath);
+            await vscode.commands.executeCommand("vscode.open", uri);
+        }
+        catch (error) {
+            vscode.window.showErrorMessage(`创建文件失败: ${error instanceof Error ? error.message : "未知错误"}`);
+        }
+    });
+    // 新增文件夹命令
+    const createFolderCommand = vscode.commands.registerCommand("iflow.createFolder", async (treeItem) => {
+        const parentPath = treeItem.filePath || treeItem.skill?.projectPath;
+        if (!parentPath) {
+            vscode.window.showErrorMessage("无法确定目标路径");
+            return;
+        }
+        const folderName = await vscode.window.showInputBox({
+            prompt: "请输入文件夹名称",
+            placeHolder: "例如: newfolder",
+            validateInput: (value) => {
+                if (!value || value.trim() === "") {
+                    return "文件夹名称不能为空";
+                }
+                if (value.includes("/") || value.includes("\\") || value.includes(":") || value.includes("*") || value.includes("?") || value.includes("\"") || value.includes("<") || value.includes(">") || value.includes("|")) {
+                    return "文件夹名称包含非法字符";
+                }
+                return null;
+            }
+        });
+        if (!folderName) {
+            return;
+        }
+        const newFolderPath = path.join(parentPath, folderName);
+        try {
+            await fs.promises.mkdir(newFolderPath, { recursive: true });
+            skillsTreeDataProvider.refresh();
+            vscode.window.showInformationMessage(`文件夹 "${folderName}" 已创建`);
+        }
+        catch (error) {
+            vscode.window.showErrorMessage(`创建文件夹失败: ${error instanceof Error ? error.message : "未知错误"}`);
+        }
+    });
+    // 复制文件命令
+    const copyFileCommand = vscode.commands.registerCommand("iflow.copyFile", async (treeItem) => {
+        const sourcePath = treeItem.filePath;
+        if (!sourcePath) {
+            vscode.window.showErrorMessage("无法确定源文件路径");
+            return;
+        }
+        const fileName = path.basename(sourcePath);
+        const baseName = path.parse(fileName).name;
+        const extName = path.parse(fileName).ext;
+        // 默认复制文件名为原名_copy.扩展名
+        const defaultCopyName = `${baseName}_copy${extName}`;
+        const newFileName = await vscode.window.showInputBox({
+            prompt: "请输入新文件名",
+            value: defaultCopyName,
+            placeHolder: defaultCopyName,
+            validateInput: (value) => {
+                if (!value || value.trim() === "") {
+                    return "文件名不能为空";
+                }
+                if (value.includes("/") || value.includes("\\") || value.includes(":") || value.includes("*") || value.includes("?") || value.includes("\"") || value.includes("<") || value.includes(">") || value.includes("|")) {
+                    return "文件名包含非法字符";
+                }
+                return null;
+            }
+        });
+        if (!newFileName) {
+            return;
+        }
+        const targetPath = path.join(path.dirname(sourcePath), newFileName);
+        try {
+            await fs.promises.copyFile(sourcePath, targetPath);
+            skillsTreeDataProvider.refresh();
+            vscode.window.showInformationMessage(`文件已复制为 "${newFileName}"`);
+        }
+        catch (error) {
+            vscode.window.showErrorMessage(`复制文件失败: ${error instanceof Error ? error.message : "未知错误"}`);
+        }
+    });
+    // 删除文件/文件夹命令
+    const deleteFileCommand = vscode.commands.registerCommand("iflow.deleteFile", async (treeItem) => {
+        const targetPath = treeItem.filePath;
+        if (!targetPath) {
+            vscode.window.showErrorMessage("无法确定目标路径");
+            return;
+        }
+        const isFile = treeItem.isFile !== undefined ? treeItem.isFile : fs.statSync(targetPath).isFile();
+        const itemType = isFile ? "文件" : "文件夹";
+        const itemName = path.basename(targetPath);
+        const confirm = await vscode.window.showWarningMessage(`确定要删除${itemType} "${itemName}" 吗？此操作不可撤销。`, { modal: true }, "删除", "取消");
+        if (confirm !== "删除") {
+            return;
+        }
+        try {
+            if (isFile) {
+                await fs.promises.unlink(targetPath);
+            }
+            else {
+                await fs.promises.rm(targetPath, { recursive: true, force: true });
+            }
+            skillsTreeDataProvider.refresh();
+            vscode.window.showInformationMessage(`${itemType} "${itemName}" 已删除`);
+        }
+        catch (error) {
+            vscode.window.showErrorMessage(`删除${itemType}失败: ${error instanceof Error ? error.message : "未知错误"}`);
+        }
+    });
+    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, openTerminalCommand, checkSyncStatusCommand, syncFromGlobalCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand, searchSkillsCommand, openFileCommand, createFileCommand, createFolderCommand, copyFileCommand, deleteFileCommand);
     // 实时刷新 skill 列表（每10秒一次）
     const refreshInterval = setInterval(async () => {
         skillManager.reloadSkills();
