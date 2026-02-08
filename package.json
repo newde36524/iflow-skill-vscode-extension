@@ -4,7 +4,7 @@
   "icon": "logo.png",
   "displayName": "iFlow Skill Manager",
   "description": "Manage iFlow skills for your projects",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -77,7 +77,27 @@
         "title": "Install iFlow",
         "icon": "$(download)"
       },
-      {"command": "iflow.searchSkills", "title": "Search Skills Online", "icon": "$(search)"}
+      {"command": "iflow.searchSkills", "title": "Search Skills Online", "icon": "$(search)"},
+      {
+        "command": "iflow.createFile",
+        "title": "New File",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "iflow.createFolder",
+        "title": "New Folder",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "iflow.copyFile",
+        "title": "Copy",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "iflow.deleteFile",
+        "title": "Delete",
+        "icon": "$(trash)"
+      }
     ],
     "viewsContainers": {
       "activitybar": [
@@ -178,6 +198,31 @@
           "command": "iflow.deleteSkill",
           "when": "view == iflowSkillsView && viewItem == skill",
           "group": "inline"
+        },
+        {
+          "command": "iflow.createFile",
+          "when": "view == iflowSkillsView && viewItem == folder",
+          "group": "filemanagement@1"
+        },
+        {
+          "command": "iflow.createFolder",
+          "when": "view == iflowSkillsView && viewItem == folder",
+          "group": "filemanagement@2"
+        },
+        {
+          "command": "iflow.copyFile",
+          "when": "view == iflowSkillsView && viewItem == file",
+          "group": "filemanagement@1"
+        },
+        {
+          "command": "iflow.deleteFile",
+          "when": "view == iflowSkillsView && viewItem == file",
+          "group": "filemanagement@2"
+        },
+        {
+          "command": "iflow.deleteFile",
+          "when": "view == iflowSkillsView && viewItem == folder",
+          "group": "filemanagement@3"
         }
       ]
     }
