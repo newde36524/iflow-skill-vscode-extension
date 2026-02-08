@@ -955,19 +955,37 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
       }
 
       // 解析 GitHub URL
-      const urlParts = githubUrl.match(
+      // 支持两种格式：
+      // 1. 完整路径: https://github.com/owner/repo/tree/branch/path
+      // 2. 简单仓库: https://github.com/owner/repo
+      let owner: string;
+      let repo: string;
+      let branch: string;
+      let targetPath: string;
+
+      // 先尝试匹配完整路径格式
+      const fullPathMatch = githubUrl.match(
         /github\.com\/([^\/]+)\/([^\/]+)\/tree\/([^\/]+)\/(.+)/,
       );
       
-      console.log("URL 解析结果:", urlParts);
-      
-      if (!urlParts) {
-        const error = `无效的 GitHub URL: ${githubUrl}`;
-        console.error("URL 解析失败:", error);
-        throw new Error(error);
+      if (fullPathMatch) {
+        console.log("URL 解析结果（完整路径）:", fullPathMatch);
+        [, owner, repo, branch, targetPath] = fullPathMatch;
+      } else {
+        // 尝试匹配简单仓库格式
+        const repoMatch = githubUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+        if (repoMatch) {
+          console.log("URL 解析结果（简单仓库）:", repoMatch);
+          [, owner, repo] = repoMatch;
+          branch = "main"; // 默认使用 main 分支
+          targetPath = "."; // 默认使用根目录
+        } else {
+          const error = `无效的 GitHub URL: ${githubUrl}`;
+          console.error("URL 解析失败:", error);
+          throw new Error(error);
+        }
       }
-
-      const [, owner, repo, branch, targetPath] = urlParts;
+      
       console.log("Owner:", owner);
       console.log("Repo:", repo);
       console.log("Branch:", branch);
@@ -990,7 +1008,37 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
       }
 
       // 定位目标目录
-      const sourceDir = path.join(tempDir, targetPath);
+      let sourceDir: string = "";
+      
+      if (targetPath === ".") {
+        // 对于简单仓库 URL，查找包含 SKILL.md 的目录
+        // 优先查找根目录
+        if (fs.existsSync(path.join(tempDir, "SKILL.md"))) {
+          sourceDir = tempDir;
+          console.log("在根目录找到 SKILL.md");
+        } else {
+          // 查找包含 SKILL.md 的子目录
+          const items = fs.readdirSync(tempDir, { withFileTypes: true });
+          let found = false;
+          for (const item of items) {
+            if (item.isDirectory()) {
+              const subDirPath = path.join(tempDir, item.name);
+              if (fs.existsSync(path.join(subDirPath, "SKILL.md"))) {
+                sourceDir = subDirPath;
+                console.log(`在子目录 ${item.name} 找到 SKILL.md`);
+                found = true;
+                break;
+              }
+            }
+          }
+          if (!found) {
+            throw new Error(`在仓库中未找到 SKILL.md 文件`);
+          }
+        }
+      } else {
+        // 对于完整路径 URL，直接使用指定的路径
+        sourceDir = path.join(tempDir, targetPath);
+      }
 
       if (!fs.existsSync(sourceDir)) {
         throw new Error(`技能目录不存在: ${sourceDir}`);
