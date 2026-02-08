@@ -824,9 +824,14 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
             console.log("Repo:", repo);
             console.log("Branch:", branch);
             console.log("Target Path:", targetPath);
-            // 准备临时目录
-            const tempDir = path.join(process.env.TMPDIR || "/tmp", `skill-${Date.now()}`);
+            // 准备临时目录（使用系统临时目录，兼容 Windows）
+            const tempDir = path.join(process.env.TEMP || process.env.TMP || "/tmp", `skill-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
             console.log("临时目录:", tempDir);
+            // 确保目标目录不存在（清理可能存在的残留目录）
+            if (fs.existsSync(tempDir)) {
+                console.log("清理已存在的临时目录:", tempDir);
+                fs.rmSync(tempDir, { recursive: true, force: true });
+            }
             fs.mkdirSync(tempDir, { recursive: true });
             if (progressCallback) {
                 progressCallback("正在克隆 GitHub 仓库...");
@@ -956,11 +961,24 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
     // 克隆 Git 仓库
     async cloneRepository(owner, repo, branch, targetDir) {
         const { execSync } = require("child_process");
+        // 如果目标目录已存在，先删除以避免 git clone 失败
+        if (fs.existsSync(targetDir)) {
+            console.log("目标目录已存在，正在删除:", targetDir);
+            try {
+                fs.rmSync(targetDir, { recursive: true, force: true });
+                console.log("成功删除目标目录");
+            }
+            catch (removeError) {
+                console.error("删除目标目录失败:", removeError);
+                // 即使删除失败也继续尝试，git clone 会给出更具体的错误信息
+            }
+        }
         try {
             // 先尝试直接克隆
             const cloneUrl = `https://github.com/${owner}/${repo}.git`;
             console.log("克隆仓库（直接）:", cloneUrl);
             execSync(`git clone --depth 1 --single-branch --branch ${branch} "${cloneUrl}" "${targetDir}"`, { stdio: "pipe" });
+            console.log("克隆成功");
         }
         catch (error) {
             console.log("直接克隆失败，尝试使用代理");
@@ -969,8 +987,19 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
                 const proxyUrl = `https://gh-proxy.com/https://github.com/${owner}/${repo}.git`;
                 console.log("克隆仓库（使用代理）:", proxyUrl);
                 execSync(`git clone --depth 1 --single-branch --branch ${branch} "${proxyUrl}" "${targetDir}"`, { stdio: "pipe" });
+                console.log("使用代理克隆成功");
             }
             catch (proxyError) {
+                // 清理可能残留的目录
+                if (fs.existsSync(targetDir)) {
+                    console.log("清理克隆失败的残留目录");
+                    try {
+                        fs.rmSync(targetDir, { recursive: true, force: true });
+                    }
+                    catch (e) {
+                        console.error("清理残留目录失败:", e);
+                    }
+                }
                 throw new Error(`克隆仓库失败（尝试了直接下载和代理）: ${proxyError instanceof Error ? proxyError.message : "未知错误"}`);
             }
         }
