@@ -2,9 +2,9 @@
   "name": "iflow-extension",
   "publisher": "zsk",
   "icon": "logo.png",
-  "displayName": "iFlow Skill Manager",
-  "description": "Manage iFlow skills for your projects",
-  "version": "0.3.0",
+  "displayName": "%displayName%",
+  "description": "%description%",
+  "version": "0.3.6",
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -19,82 +19,82 @@
     "commands": [
       {
         "command": "iflow.generateSkill",
-        "title": "Generate Skill for Current Project",
+        "title": "%iflow.generateSkill.title%",
         "icon": "$(add)"
       },
       {
         "command": "iflow.refreshSkills",
-        "title": "Refresh Skills",
+        "title": "%iflow.refreshSkills.title%",
         "icon": "$(refresh)"
       },
       {
         "command": "iflow.showAllSkills",
-        "title": "Show All Skills",
+        "title": "%iflow.showAllSkills.title%",
         "icon": "$(files)"
       },
       {
         "command": "iflow.clearSkills",
-        "title": "Clear Skills List",
+        "title": "%iflow.clearSkills.title%",
         "icon": "$(clear-all)"
       },
       {
         "command": "iflow.openTerminal",
-        "title": "Open iFlow Terminal",
+        "title": "%iflow.openTerminal.title%",
         "icon": "$(terminal)"
       },
       {
         "command": "iflow.viewSkillDetail",
-        "title": "View Skill Details",
+        "title": "%iflow.viewSkillDetail.title%",
         "icon": "$(info)"
       },
       {
         "command": "iflow.editSkill",
-        "title": "Edit Skill",
+        "title": "%iflow.editSkill.title%",
         "icon": "$(edit)"
       },
       {
         "command": "iflow.saveSkill",
-        "title": "Save and Import Skill",
+        "title": "%iflow.saveSkill.title%",
         "icon": "$(save)"
       },
       {
         "command": "iflow.deleteSkill",
-        "title": "Delete Skill",
+        "title": "%iflow.deleteSkill.title%",
         "icon": "$(trash)"
       },
       {
         "command": "iflow.importToGlobal",
-        "title": "Import to Global",
+        "title": "%iflow.importToGlobal.title%",
         "icon": "$(cloud-download)"
       },
       {
         "command": "iflow.install",
-        "title": "Install iFlow",
+        "title": "%iflow.install.title%",
         "icon": "$(download)"
       },
       {
         "command": "iflow.searchSkills",
-        "title": "Search Skills Online",
+        "title": "%iflow.searchSkills.title%",
         "icon": "$(search)"
       },
       {
         "command": "iflow.createFile",
-        "title": "New File",
+        "title": "%iflow.createFile.title%",
         "icon": "$(new-file)"
       },
       {
         "command": "iflow.createFolder",
-        "title": "New Folder",
+        "title": "%iflow.createFolder.title%",
         "icon": "$(new-folder)"
       },
       {
         "command": "iflow.copyFile",
-        "title": "Copy",
+        "title": "%iflow.copyFile.title%",
         "icon": "$(copy)"
       },
       {
         "command": "iflow.deleteFile",
-        "title": "Delete",
+        "title": "%iflow.deleteFile.title%",
         "icon": "$(trash)"
       }
     ],
@@ -175,22 +175,22 @@
       "view/item/context": [
         {
           "command": "iflow.viewSkillDetail",
-          "when": "view == iflowSkillsView && viewItem == skill",
+          "when": "view == iflowSkillsView && (viewItem == skill || viewItem == global-skill || viewItem == project-skill)",
           "group": "management@1"
         },
         {
           "command": "iflow.importToGlobal",
-          "when": "view == iflowSkillsView && viewItem == skill",
+          "when": "view == iflowSkillsView && viewItem == project-skill",
           "group": "management@2"
         },
         {
           "command": "iflow.editSkill",
-          "when": "view == iflowSkillsView && viewItem == skill",
+          "when": "view == iflowSkillsView && (viewItem == skill || viewItem == global-skill || viewItem == project-skill)",
           "group": "inline"
         },
         {
           "command": "iflow.deleteSkill",
-          "when": "view == iflowSkillsView && viewItem == skill",
+          "when": "view == iflowSkillsView && (viewItem == skill || viewItem == global-skill || viewItem == project-skill)",
           "group": "inline"
         },
         {
@@ -210,7 +210,7 @@
         },
         {
           "command": "iflow.deleteFile",
-          "when": "view == iflowSkillsView && viewItem == file",
+          "when": "view == iflowSkillsView && (viewItem == file || viewItem == folder)",
           "group": "filemanagement@2"
         },
         {

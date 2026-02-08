@@ -6,7 +6,6 @@ import { SkillManager, Skill } from './skillManager';
 // 多语言支持
 interface I18nMessages {
     globalSkills: string;
-    localSkills: string;
     projectSkills: string;
     items: string;
     noSkills: string;
@@ -24,7 +23,6 @@ function getI18nMessages(): I18nMessages {
     if (isZh) {
         return {
             globalSkills: '🌍 全局技能',
-            localSkills: '💻 本地技能',
             projectSkills: '📁 项目技能',
             items: '项',
             noSkills: '暂无技能。点击"生成技能"创建一个。',
@@ -37,7 +35,6 @@ function getI18nMessages(): I18nMessages {
     } else {
         return {
             globalSkills: '🌍 Global Skills',
-            localSkills: '💻 Local Skills',
             projectSkills: '📁 Project Skills',
             items: 'items',
             noSkills: 'No skills found. Click "Generate Skill" to create one.',
@@ -70,7 +67,14 @@ export class SkillsTreeItem extends vscode.TreeItem {
         
         // 设置 contextValue
         if (skill) {
-            this.contextValue = 'skill';
+            // 根据技能类型设置不同的 contextValue
+            if (skill.isGlobal) {
+                this.contextValue = 'global-skill';
+            } else if (skill.isProjectLocal) {
+                this.contextValue = 'project-skill';
+            } else {
+                this.contextValue = 'skill';
+            }
             
             // 保留原来的绿色圆点图标（根据是否匹配当前工作区）
             const currentWorkspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -189,13 +193,12 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
 
     getChildren(element?: SkillsTreeItem): Thenable<SkillsTreeItem[]> {
         if (!element) {
-            // Root level - 分组显示全局技能和本地技能
+            // Root level - 分组显示全局技能和项目技能
             const skills = this.skillManager.getAllSkills();
             const messages = getI18nMessages();
             
-            // 分离全局技能和本地技能
+            // 分离全局技能和项目技能
             const globalSkills = skills.filter(skill => skill.isGlobal);
-            const localSkills = skills.filter(skill => !skill.isGlobal && !skill.isProjectLocal);
             const projectLocalSkills = skills.filter(skill => skill.isProjectLocal);
             
             const items: SkillsTreeItem[] = [];
@@ -210,18 +213,6 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
                 );
                 globalGroup.description = `${globalSkills.length} ${messages.items}`;
                 items.push(globalGroup);
-            }
-            
-            // 添加本地技能分组
-            if (localSkills.length > 0) {
-                const localGroup = new SkillsTreeItem(
-                    messages.localSkills,
-                    vscode.TreeItemCollapsibleState.Collapsed,
-                    undefined,
-                    'local-group'
-                );
-                localGroup.description = `${localSkills.length} ${messages.items}`;
-                items.push(localGroup);
             }
             
             // 添加项目本地技能分组
@@ -283,21 +274,6 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
                         skill.id
                     ));
                 }
-            });
-            
-            return Promise.resolve(items);
-        } else if (element.id === 'local-group') {
-            // 显示本地技能
-            const skills = this.skillManager.getAllSkills().filter(skill => !skill.isGlobal && !skill.isProjectLocal);
-            const items: SkillsTreeItem[] = [];
-            
-            skills.forEach(skill => {
-                items.push(new SkillsTreeItem(
-                    skill.name,
-                    vscode.TreeItemCollapsibleState.None,
-                    skill,
-                    skill.id
-                ));
             });
             
             return Promise.resolve(items);

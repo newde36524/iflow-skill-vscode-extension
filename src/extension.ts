@@ -114,9 +114,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Handle double-click on skill items to show details
   treeView.onDidChangeSelection(async (e) => {
-    if (e.selection.length === 1 && e.selection[0].contextValue === "skill") {
+    if (e.selection.length === 1) {
       const skillItem = e.selection[0];
-      if (skillItem.id) {
+      // 检查是否是技能项（包括全局技能、项目技能等）
+      const isSkillItem = skillItem.contextValue === "skill" || 
+                          skillItem.contextValue === "global-skill" || 
+                          skillItem.contextValue === "project-skill";
+      
+      if (isSkillItem && skillItem.id) {
         // 保存 skillId 以避免 TypeScript 类型错误
         const skillId = skillItem.id;
         // 从文件中读取最新的 skill 内容

@@ -310,28 +310,12 @@ class SkillManager {
             syncStatus: "new",
         };
         if (progressCallback) {
-            progressCallback(`正在保存技能文件...`);
+            progressCallback(`正在保存技能到项目本地文件夹...`);
         }
-        this.skills.set(id, skill);
-        await this.saveSkillToFile(skill);
-        // 自动导入到全局目录
+        // 保存到项目本地的 .iflow 文件夹
+        await this.saveSkillToProjectLocal(skill);
         if (progressCallback) {
-            progressCallback(`正在导入到全局技能目录...`);
-        }
-        const importResult = await this.importSkillToGlobal(id);
-        if (!importResult.success && importResult.error) {
-            console.error(`Failed to import skill to global: ${importResult.error}`);
-            if (progressCallback) {
-                progressCallback(`导入到全局目录失败: ${importResult.error}`);
-            }
-        }
-        else {
-            if (progressCallback) {
-                progressCallback(`已成功导入到全局技能目录`);
-            }
-        }
-        if (progressCallback) {
-            progressCallback(`技能创建完成！`);
+            progressCallback(`技能已保存到项目本地文件夹！`);
         }
     }
     generateId(name, projectPath) {
@@ -431,6 +415,29 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
 ## Documentation
 <!-- Add detailed documentation here using Markdown formatting -->
 `;
+    }
+    // 保存技能到项目本地的 .iflow 文件夹（根目录 SKILL.md）
+    async saveSkillToProjectLocal(skill) {
+        try {
+            const iflowDir = path.join(skill.projectPath, ".iflow");
+            if (!fs.existsSync(iflowDir)) {
+                fs.mkdirSync(iflowDir, { recursive: true });
+            }
+            // 保存到 .iflow/SKILL.md
+            const skillFilePath = path.join(iflowDir, "SKILL.md");
+            const contentWithVersion = this.addVersionToContent(skill.content, skill.version);
+            await fs.promises.writeFile(skillFilePath, contentWithVersion, "utf-8");
+            // 设置 absolutePath 用于识别
+            skill.absolutePath = skillFilePath;
+            skill.isProjectLocal = true;
+            // 添加到技能列表
+            this.skills.set(skill.id, skill);
+            console.log(`[saveSkillToProjectLocal] Saved skill to: ${skillFilePath}`);
+        }
+        catch (error) {
+            console.error(`[saveSkillToProjectLocal] Error saving skill:`, error);
+            throw error;
+        }
     }
     async updateSkill(skill) {
         skill.updatedAt = new Date().toISOString();
