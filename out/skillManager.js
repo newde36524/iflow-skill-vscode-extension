@@ -120,27 +120,20 @@ class SkillManager {
         }
         workspaceFolders.forEach((folder) => {
             const projectPath = folder.uri.fsPath;
-            const iflowDir = path.join(projectPath, ".iflow");
-            if (!fs.existsSync(iflowDir)) {
+            const projectName = path.basename(projectPath);
+            const skillsDir = path.join(projectPath, ".iflow", "skills");
+            if (!fs.existsSync(skillsDir)) {
                 return;
             }
-            // 检查 .iflow 目录下的所有文件和文件夹
-            const items = fs.readdirSync(iflowDir, { withFileTypes: true });
+            // 遍历 skillsDir 下的所有子文件夹
+            const items = fs.readdirSync(skillsDir, { withFileTypes: true });
             items.forEach((item) => {
-                const skillId = `project-${this.hashString(iflowDir)}-${item.name}`;
-                if (item.isFile() && item.name.toLowerCase() === "skill.md") {
-                    // 单个 SKILL.md 文件
-                    const skillFilePath = path.join(iflowDir, item.name);
-                    this.loadProjectSkillFile(skillFilePath, projectPath, skillId, item.name.replace(".md", ""));
-                }
-                else if (item.isDirectory()) {
-                    // 文件夹，查找其中的 SKILL.md 或 skill.md
-                    const skillDirPath = path.join(iflowDir, item.name);
-                    let skillFilePath = path.join(skillDirPath, "SKILL.md");
-                    if (!fs.existsSync(skillFilePath)) {
-                        skillFilePath = path.join(skillDirPath, "skill.md");
-                    }
+                if (item.isDirectory()) {
+                    const subDirPath = path.join(skillsDir, item.name);
+                    // 查找子文件夹中的 SKILL.md 文件
+                    const skillFilePath = path.join(subDirPath, "SKILL.md");
                     if (fs.existsSync(skillFilePath)) {
+                        const skillId = `project-${this.hashString(projectPath)}-${this.hashString(subDirPath)}`;
                         this.loadProjectSkillFile(skillFilePath, projectPath, skillId, item.name);
                     }
                 }
@@ -501,22 +494,42 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
 <!-- Add detailed documentation here using Markdown formatting -->
 `;
     }
-    // 保存技能到项目本地的 .iflow 文件夹
+    // 保存技能到项目本地的 .iflow/skills/项目名/ 文件夹
     async saveSkillToProjectLocal(skill) {
         try {
-            const iflowDir = path.join(skill.projectPath, ".iflow");
-            if (!fs.existsSync(iflowDir)) {
-                fs.mkdirSync(iflowDir, { recursive: true });
+            const projectName = path.basename(skill.projectPath);
+            const skillsDir = path.join(skill.projectPath, ".iflow", "skills");
+            let baseSkillDir = path.join(skillsDir, projectName);
+            // 检查项目名称文件夹是否已存在且包含 SKILL.md 文件
+            if (fs.existsSync(baseSkillDir)) {
+                const existingSkillPath = path.join(baseSkillDir, "SKILL.md");
+                if (fs.existsSync(existingSkillPath)) {
+                    // 查找所有以项目名称开头的文件夹，找到最大的编号
+                    let maxNumber = 1;
+                    const items = fs.readdirSync(skillsDir, { withFileTypes: true });
+                    items.forEach((item) => {
+                        if (item.isDirectory() && item.name.startsWith(projectName)) {
+                            const match = item.name.match(new RegExp(`^${this.escapeRegExp(projectName)}-(\\d+)$`));
+                            if (match) {
+                                const num = parseInt(match[1], 10);
+                                if (num > maxNumber) {
+                                    maxNumber = num;
+                                }
+                            }
+                        }
+                    });
+                    // 创建新的文件夹，格式为"项目名称-递增编号"
+                    const newFolderName = `${projectName}-${maxNumber + 1}`;
+                    baseSkillDir = path.join(skillsDir, newFolderName);
+                    console.log(`[saveSkillToProjectLocal] Creating new folder with increment: ${newFolderName}`);
+                }
             }
-            // 生成文件名，避免覆盖同名文件
-            let skillFileName = "SKILL.md";
-            let counter = 1;
-            while (fs.existsSync(path.join(iflowDir, skillFileName))) {
-                // 如果文件已存在，添加编号
-                skillFileName = `SKILL-${counter}.md`;
-                counter++;
+            // 创建必要的目录
+            if (!fs.existsSync(baseSkillDir)) {
+                fs.mkdirSync(baseSkillDir, { recursive: true });
             }
-            const skillFilePath = path.join(iflowDir, skillFileName);
+            // 保存到 项目/.iflow/skills/项目名/SKILL.md 或 项目/.iflow/skills/项目名-编号/SKILL.md
+            const skillFilePath = path.join(baseSkillDir, "SKILL.md");
             const contentWithVersion = this.addVersionToContent(skill.content, skill.version);
             await fs.promises.writeFile(skillFilePath, contentWithVersion, "utf-8");
             // 设置 absolutePath 用于识别
@@ -530,6 +543,10 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
             console.error(`[saveSkillToProjectLocal] Error saving skill:`, error);
             throw error;
         }
+    }
+    // 转义正则表达式特殊字符
+    escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
     async updateSkill(skill) {
         skill.updatedAt = new Date().toISOString();
@@ -824,7 +841,7 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
             }
         }
     }
-    // 将项目本地技能导入到全局（支持复制整个文件夹）
+    // 将项目本地技能导入到全局（只支持子文件夹）
     async importProjectSkillToGlobal(skillId) {
         const skill = this.skills.get(skillId);
         if (!skill) {
@@ -840,53 +857,59 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
             if (!fs.existsSync(globalSkillsDir)) {
                 fs.mkdirSync(globalSkillsDir, { recursive: true });
             }
-            // 确定源路径（可能是单个文件或文件夹）
-            const sourcePath = skill.absolutePath;
-            const isDirectory = fs.statSync(sourcePath).isDirectory();
-            // 获取项目名称（从项目路径中提取）
-            const projectName = path.basename(skill.projectPath);
-            let targetDir;
-            let targetFileName;
-            if (isDirectory) {
-                // 如果是文件夹，使用命名规则：项目名称-文件夹名称
-                targetDir = path.join(globalSkillsDir, `${projectName}-${skill.name}`);
-                // 如果目标已存在，先删除（覆盖）
-                if (fs.existsSync(targetDir)) {
-                    console.log(`[importProjectSkillToGlobal] Overwriting existing directory: ${targetDir}`);
+            // 获取源路径（子文件夹路径）
+            const sourcePath = path.dirname(skill.absolutePath);
+            const subDirName = path.basename(sourcePath);
+            // 确定目标目录名称
+            let targetDir = path.join(globalSkillsDir, subDirName);
+            // 检查是否存在冲突
+            if (fs.existsSync(targetDir)) {
+                // 读取全局技能的 data.json 文件，检查 project_path
+                const dataJsonPath = path.join(targetDir, "data.json");
+                let sameProject = false;
+                if (fs.existsSync(dataJsonPath)) {
+                    try {
+                        const data = JSON.parse(fs.readFileSync(dataJsonPath, "utf-8"));
+                        const existingProjectPath = data.project_path;
+                        sameProject = existingProjectPath === skill.projectPath;
+                    }
+                    catch (error) {
+                        console.error(`[importProjectSkillToGlobal] Error reading data.json:`, error);
+                    }
+                }
+                if (sameProject) {
+                    // 相同项目，覆盖
+                    console.log(`[importProjectSkillToGlobal] Same project, overwriting: ${targetDir}`);
                     fs.rmSync(targetDir, { recursive: true, force: true });
                 }
-                // 复制整个文件夹
-                await this.copyDirectory(sourcePath, targetDir);
-                console.log(`[importProjectSkillToGlobal] Copied directory: ${sourcePath} -> ${targetDir}`);
-            }
-            else {
-                // 如果是单个文件，检查是否在 .iflow 根目录
-                const iflowDir = path.join(skill.projectPath, ".iflow");
-                const isRootFile = path.dirname(sourcePath) === iflowDir;
-                if (isRootFile) {
-                    // 在根目录的单个文件，使用命名规则：项目名称-SKILL.md
-                    targetFileName = `${projectName}-SKILL.md`;
-                    const targetPath = path.join(globalSkillsDir, targetFileName);
-                    // 如果目标已存在，直接覆盖
-                    if (fs.existsSync(targetPath)) {
-                        console.log(`[importProjectSkillToGlobal] Overwriting existing file: ${targetPath}`);
-                    }
-                    await fs.promises.copyFile(sourcePath, targetPath);
-                    console.log(`[importProjectSkillToGlobal] Copied file: ${sourcePath} -> ${targetPath}`);
-                }
                 else {
-                    // 在子文件夹中的文件，使用命名规则：项目名称-子文件夹名称
-                    const subDirName = path.basename(path.dirname(sourcePath));
-                    targetDir = path.join(globalSkillsDir, `${projectName}-${subDirName}`);
-                    // 如果目标已存在，先删除（覆盖）
-                    if (fs.existsSync(targetDir)) {
-                        console.log(`[importProjectSkillToGlobal] Overwriting existing directory: ${targetDir}`);
-                        fs.rmSync(targetDir, { recursive: true, force: true });
+                    // 不同项目，创建新文件夹
+                    console.log(`[importProjectSkillToGlobal] Different project, creating new folder`);
+                    let counter = 1;
+                    while (fs.existsSync(targetDir)) {
+                        targetDir = path.join(globalSkillsDir, `${subDirName}-${counter}`);
+                        counter++;
                     }
-                    await this.copyDirectory(path.dirname(sourcePath), targetDir);
-                    console.log(`[importProjectSkillToGlobal] Copied subdirectory: ${path.dirname(sourcePath)} -> ${targetDir}`);
                 }
             }
+            // 复制整个文件夹
+            await this.copyDirectory(sourcePath, targetDir);
+            console.log(`[importProjectSkillToGlobal] Copied directory: ${sourcePath} -> ${targetDir}`);
+            // 更新或创建 data.json 文件，记录项目路径
+            const dataJsonPath = path.join(targetDir, "data.json");
+            let data = {};
+            if (fs.existsSync(dataJsonPath)) {
+                try {
+                    data = JSON.parse(fs.readFileSync(dataJsonPath, "utf-8"));
+                }
+                catch (error) {
+                    console.error(`[importProjectSkillToGlobal] Error reading existing data.json:`, error);
+                }
+            }
+            data.project_path = skill.projectPath;
+            data.imported_from = "project_local";
+            data.imported_at = new Date().toISOString();
+            await fs.promises.writeFile(dataJsonPath, JSON.stringify(data, null, 2), "utf-8");
             // 重新加载全局技能
             this.loadGlobalSkills();
             console.log(`[importProjectSkillToGlobal] Successfully imported skill: ${skill.name}`);

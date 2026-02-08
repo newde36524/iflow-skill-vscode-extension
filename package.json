@@ -4,7 +4,7 @@
   "icon": "logo.png",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "engines": {
     "vscode": "^1.96.0"
   },
