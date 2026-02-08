@@ -782,10 +782,111 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
             throw error;
         }
     }
+    // 从 GitHub 搜索技能（使用仓库搜索 API）
+    async searchSkillsFromGitHub(query, sortBy = "popular", limit = 5, page = 1) {
+        try {
+            // 构建 GitHub 仓库搜索查询
+            // 搜索在名称或描述中包含查询词和 "skill" 的仓库
+            const searchQuery = `${query} skill in:name,description`;
+            // 确定排序方式
+            const sort = sortBy === "popular" ? "stars" : "updated";
+            const order = "desc";
+            // 计算分页
+            const perPage = Math.min(limit, 100);
+            const p = page;
+            const apiUrl = `https://api.github.com/search/repositories?q=${encodeURIComponent(searchQuery)}&sort=${sort}&order=${order}&per_page=${perPage}&page=${p}`;
+            console.log(`GitHub 仓库搜索 API URL: ${apiUrl}`);
+            const response = await fetch(apiUrl, {
+                headers: {
+                    "User-Agent": "iFlow-Skill-Manager",
+                    "Accept": "application/vnd.github.v3+json",
+                },
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`GitHub API error: ${response.status} - ${errorText}`);
+                if (response.status === 403) {
+                    throw new Error(`GitHub API 速率限制已超出，请稍后再试（未认证用户限制 60 次/小时）`);
+                }
+                throw new Error(`GitHub API error: ${response.statusText}`);
+            }
+            const data = await response.json();
+            if (!data.items || data.items.length === 0) {
+                return [];
+            }
+            // 转换为 OnlineSkill 格式
+            const skills = [];
+            for (const item of data.items) {
+                // 提取仓库信息
+                const owner = item.owner.login;
+                const repoName = item.name;
+                const stars = item.stargazers_count || 0;
+                const forks = item.forks_count || 0;
+                const updatedAt = item.updated_at;
+                const createdAt = item.created_at;
+                const description = item.description || "";
+                const defaultBranch = item.default_branch || "main";
+                const language = item.language || "";
+                // 构建 GitHub URL
+                const githubUrl = `https://github.com/${owner}/${repoName}`;
+                // 生成唯一的 ID
+                const id = `github-${owner}-${repoName}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                // 保存完整的原始数据
+                const rawData = {
+                    github_url: githubUrl,
+                    author: owner,
+                    author_avatar: item.owner.avatar_url || "",
+                    description: description,
+                    stars: stars,
+                    forks: forks,
+                    updated_at: Math.floor(new Date(updatedAt).getTime() / 1000),
+                    created_at: Math.floor(new Date(createdAt).getTime() / 1000),
+                    default_branch: defaultBranch,
+                    language: language,
+                    ...item,
+                };
+                // 确定技能名称（使用仓库名称）
+                const skillName = repoName;
+                skills.push({
+                    id: id,
+                    name: skillName,
+                    description: description || `从 GitHub 搜索到的技能: ${repoName}`,
+                    content: `# ${skillName}\n\n${description}`,
+                    url: githubUrl,
+                    repository: owner,
+                    stars: stars,
+                    forks: forks,
+                    createdAt: new Date(createdAt).toISOString(),
+                    updatedAt: new Date(updatedAt).toISOString(),
+                    rawData: rawData,
+                });
+                // 达到限制数量时停止
+                if (skills.length >= limit) {
+                    break;
+                }
+            }
+            console.log(`GitHub 搜索返回 ${skills.length} 个技能`);
+            return skills;
+        }
+        catch (error) {
+            console.error("Error searching skills from GitHub:", error);
+            throw error;
+        }
+    }
     // 在线搜索技能
     async searchSkillsOnline(query, sortBy = "popular", limit = 5, page = 1) {
-        // 使用 SkillMap API 搜索技能
-        return await this.searchSkillsFromSkillMap(query, limit, page);
+        // 获取配置的数据源
+        const config = vscode.workspace.getConfiguration("iflow");
+        const dataSource = config.get("skillDataSource") || "skillmap";
+        console.log(`搜索技能 - 数据源: ${dataSource}, 查询: ${query}, 排序: ${sortBy}, 页码: ${page}`);
+        // 根据配置选择数据源
+        if (dataSource === "github") {
+            return await this.searchSkillsFromGitHub(query, sortBy, limit, page);
+        }
+        else {
+            // 默认使用 SkillMap
+            return await this.searchSkillsFromSkillMap(query, limit, page);
+        }
     }
     // 从 GitHub 下载整个仓库并安装技能到全局
     async installSkillFromGitHub(githubUrl, skillName, skillData, progressCallback) {

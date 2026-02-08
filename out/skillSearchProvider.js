@@ -75,12 +75,6 @@ class SkillSearchProvider {
                 case "viewDetail":
                     this.handleViewDetail(message.skill);
                     break;
-                case "openSettings":
-                    await vscode.commands.executeCommand("workbench.action.openSettings", "iflow.githubToken");
-                    break;
-                case "openGitHubTokens":
-                    await vscode.env.openExternal(vscode.Uri.parse("https://github.com/settings/tokens"));
-                    break;
             }
         }, undefined, void 0);
     }
@@ -116,23 +110,12 @@ class SkillSearchProvider {
             });
         }
         catch (error) {
-            // 检查是否为认证错误
+            // 统一错误处理
             const errorMessage = error instanceof Error ? error.message : "搜索失败，请稍后重试";
-            if (errorMessage.includes("401") ||
-                errorMessage.includes("Unauthorized") ||
-                errorMessage.includes("403") ||
-                errorMessage.includes("rate limit")) {
-                this.currentPanel?.webview.postMessage({
-                    command: "showAuthError",
-                    error: errorMessage,
-                });
-            }
-            else {
-                this.currentPanel?.webview.postMessage({
-                    command: "showError",
-                    error: errorMessage,
-                });
-            }
+            this.currentPanel?.webview.postMessage({
+                command: "showError",
+                error: errorMessage,
+            });
         }
     }
     async handleInstall(skill) {
@@ -952,88 +935,6 @@ class SkillSearchProvider {
             padding: 15px;
         }
 
-        .auth-error {
-            background-color: rgba(255, 152, 0, 0.1);
-            border: 1px solid #ff9800;
-            border-radius: 6px;
-            padding: 20px;
-            margin-bottom: 15px;
-        }
-
-        .auth-error-title {
-            font-size: 16px;
-            font-weight: bold;
-            color: #ff9800;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .auth-error-description {
-            font-size: 13px;
-            color: var(--vscode-foreground);
-            margin-bottom: 15px;
-            line-height: 1.5;
-        }
-
-        .auth-error-steps {
-            font-size: 13px;
-            color: var(--vscode-foreground);
-            margin-bottom: 15px;
-        }
-
-        .auth-error-steps ol {
-            margin-left: 20px;
-            margin-top: 8px;
-        }
-
-        .auth-error-steps li {
-            margin-bottom: 5px;
-            line-height: 1.4;
-        }
-
-        .auth-error-steps code {
-            background-color: var(--vscode-textCodeBlock-background);
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 12px;
-        }
-
-        .auth-error-actions {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .auth-btn {
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-            transition: background-color 0.2s;
-            border: none;
-        }
-
-        .auth-btn-primary {
-            background-color: var(--vscode-button-primaryBackground);
-            color: var(--vscode-button-primaryForeground);
-        }
-
-        .auth-btn-primary:hover {
-            background-color: var(--vscode-button-primaryHoverBackground);
-        }
-
-        .auth-btn-secondary {
-            background-color: var(--vscode-button-secondaryBackground);
-            color: var(--vscode-button-secondaryForeground);
-        }
-
-        .auth-btn-secondary:hover {
-            background-color: var(--vscode-button-secondaryHoverBackground);
-        }
-
         .badge {
             display: inline-block;
             padding: 2px 8px;
@@ -1060,6 +961,10 @@ class SkillSearchProvider {
             />
         </div>
         <div class="search-options">
+            <select id="dataSourceSelect" class="sort-select">
+                <option value="github">GitHub</option>
+                <option value="skillmap">SkillMap</option>
+            </select>
             <select id="sortSelect" class="sort-select">
                 <option value="popular">热度排序</option>
                 <option value="latest">最新排序</option>
@@ -1083,13 +988,14 @@ class SkillSearchProvider {
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
         const sortSelect = document.getElementById('sortSelect');
+        const dataSourceSelect = document.getElementById('dataSourceSelect');
         const contentArea = document.getElementById('contentArea');
 
         // 搜索功能
         function performSearch() {
             const query = searchInput.value.trim();
             const sortBy = sortSelect.value;
-            const dataSource = 'skillmap'; // 固定使用 SkillMap
+            const dataSource = dataSourceSelect.value;
 
             if (!query) {
                 showEmptyState();
@@ -1101,6 +1007,7 @@ class SkillSearchProvider {
             hasMore = false;
             currentQuery = query;
             currentSortBy = sortBy;
+            currentDataSource = dataSource;
 
             searchBtn.disabled = true;
             showLoading();
@@ -1121,6 +1028,7 @@ class SkillSearchProvider {
         let isLoading = false;
         let currentQuery = '';
         let currentSortBy = 'popular';
+        let currentDataSource = 'github';
         let lastLoadTime = 0; // 上次加载时间戳
         
         contentArea.addEventListener('click', function(event) {
@@ -1180,7 +1088,7 @@ class SkillSearchProvider {
                 command: 'search',
                 query: currentQuery,
                 sortBy: currentSortBy,
-                dataSource: 'skillmap',
+                dataSource: currentDataSource,
                 page: currentPage
             };
             console.log('Sending search message:', message);
@@ -1268,11 +1176,6 @@ class SkillSearchProvider {
                     showError(message.error);
                     break;
 
-                case 'showAuthError':
-                    searchBtn.disabled = false;
-                    showAuthError(message.error);
-                    break;
-
                 case 'installSuccess':
                     markAsInstalled(message.skillId);
                     // 更新已安装列表
@@ -1284,22 +1187,24 @@ class SkillSearchProvider {
         });
 
         function showLoading() {
+            const sourceText = currentDataSource === 'github' ? 'GitHub' : 'SkillMap 市场';
             contentArea.innerHTML = \`
                 <div class="loading">
                     <div class="loading-spinner"></div>
                     <div class="loading-text">正在搜索<span class="loading-dots">...</span></div>
-                    <div class="loading-subtext">从 SkillMap 市场查找技能</div>
+                    <div class="loading-subtext">从 \${sourceText} 查找技能</div>
                 </div>
             \`;
         }
 
         function showEmptyState() {
+            const sourceText = currentDataSource === 'github' ? 'GitHub' : 'SkillMap 市场';
             contentArea.innerHTML = \`
                 <div class="empty-state">
                     <div class="empty-state-icon">🔍</div>
                     <div class="empty-state-title">搜索 iFlow 技能</div>
                     <div class="empty-state-description">
-                        输入关键词搜索 GitHub 上的 iFlow 技能，按热度或最新时间排序，找到后可直接安装到全局技能库。
+                        输入关键词搜索 \${sourceText} 上的 iFlow 技能，按热度或最新时间排序，找到后可直接安装到全局技能库。
                     </div>
                 </div>
             \`;
@@ -1311,52 +1216,6 @@ class SkillSearchProvider {
                     \${error}
                 </div>
             \`;
-        }
-
-        function showAuthError(error) {
-            contentArea.innerHTML = \`
-                <div class="auth-error">
-                    <div class="auth-error-title">
-                        🔐 需要认证
-                    </div>
-                    <div class="auth-error-description">
-                        GitHub API 请求失败（\${escapeHtml(error)}）。这是由于未配置 GitHub Token 或 Token 无效导致的。
-                    </div>
-                    <div class="auth-error-steps">
-                        <strong>解决方法：</strong>
-                        <ol>
-                            <li>访问 <a href="https://github.com/settings/tokens" target="_blank" style="color: var(--vscode-textLink-foreground);">GitHub Settings</a></li>
-                            <li>点击 "Generate new token (classic)"</li>
-                            <li>勾选 <code>public_repo</code> 权限</li>
-                            <li>生成 Token 并复制</li>
-                            <li>在 VSCode 设置中搜索 <code>iflow.githubToken</code> 并粘贴 Token</li>
-                        </ol>
-                    </div>
-                    <div class="auth-error-actions">
-                        <button class="auth-btn auth-btn-primary" onclick="openSettings()">
-                            打开设置
-                        </button>
-                        <button class="auth-btn auth-btn-secondary" onclick="openGitHubTokens()">
-                            前往 GitHub 生成 Token
-                        </button>
-                        <button class="auth-btn auth-btn-secondary" onclick="showEmptyState()">
-                            稍后再试
-                        </button>
-                    </div>
-                </div>
-            \`;
-        }
-
-        function openSettings() {
-            vscode.postMessage({
-                command: 'openSettings'
-            });
-        }
-
-        function openGitHubTokens() {
-            vscode.postMessage({
-                command: 'openGitHubTokens'
-            });
         }
 
         function showResults(skills, append = false) {
@@ -1388,6 +1247,9 @@ class SkillSearchProvider {
                 
                 // 检查是否已安装
                 const isInstalled = installedSkillsList.includes(skill.id);
+                
+                // 根据数据源显示不同的来源标签
+                const sourceText = currentDataSource === 'github' ? 'GitHub' : 'SkillMap 市场';
 
                 card.innerHTML = \`
                     <div class="skill-header">
@@ -1406,7 +1268,7 @@ class SkillSearchProvider {
                     <div class="skill-description">\${escapeHtml(skill.description || '暂无描述')}</div>
                     <div class="skill-footer">
                         <div class="skill-meta">
-                            来自 SkillMap 市场
+                            来自 \${sourceText}
                         </div>
                         <div class="skill-actions">
                             <button class="action-btn" data-action="viewDetail">
