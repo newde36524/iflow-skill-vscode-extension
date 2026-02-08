@@ -4,7 +4,7 @@
   "icon": "logo.png",
   "displayName": "iFlow Skill Manager",
   "description": "Manage iFlow skills for your projects",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -61,6 +61,11 @@
         "command": "iflow.deleteSkill",
         "title": "Delete Skill",
         "icon": "$(trash)"
+      },
+      {
+        "command": "iflow.importToGlobal",
+        "title": "Import to Global",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "iflow.install",
@@ -172,6 +177,11 @@
           "command": "iflow.viewSkillDetail",
           "when": "view == iflowSkillsView && viewItem == skill",
           "group": "management@1"
+        },
+        {
+          "command": "iflow.importToGlobal",
+          "when": "view == iflowSkillsView && viewItem == skill",
+          "group": "management@2"
         },
         {
           "command": "iflow.editSkill",

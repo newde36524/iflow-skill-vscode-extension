@@ -3,6 +3,53 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { SkillManager, Skill } from './skillManager';
 
+// 多语言支持
+interface I18nMessages {
+    globalSkills: string;
+    localSkills: string;
+    projectSkills: string;
+    items: string;
+    noSkills: string;
+    synced: string;
+    modified: string;
+    outdated: string;
+    new: string;
+    noDescription: string;
+}
+
+function getI18nMessages(): I18nMessages {
+    const locale = vscode.env.language;
+    const isZh = locale.startsWith('zh');
+    
+    if (isZh) {
+        return {
+            globalSkills: '🌍 全局技能',
+            localSkills: '💻 本地技能',
+            projectSkills: '📁 项目技能',
+            items: '项',
+            noSkills: '暂无技能。点击"生成技能"创建一个。',
+            synced: '已同步',
+            modified: '已修改',
+            outdated: '待更新',
+            new: '新建',
+            noDescription: '暂无描述'
+        };
+    } else {
+        return {
+            globalSkills: '🌍 Global Skills',
+            localSkills: '💻 Local Skills',
+            projectSkills: '📁 Project Skills',
+            items: 'items',
+            noSkills: 'No skills found. Click "Generate Skill" to create one.',
+            synced: 'Synced',
+            modified: 'Modified',
+            outdated: 'Outdated',
+            new: 'New',
+            noDescription: 'No description'
+        };
+    }
+}
+
 export class SkillsTreeItem extends vscode.TreeItem {
     constructor(
         public readonly label: string,
@@ -14,14 +61,22 @@ export class SkillsTreeItem extends vscode.TreeItem {
     ) {
         super(label, collapsibleState);
         
+        // 设置 id
+        if (id) {
+            this.id = id;
+        } else if (skill) {
+            this.id = skill.id;
+        }
+        
         // 设置 contextValue
         if (skill) {
             this.contextValue = 'skill';
-            this.id = skill.id;
             
             // 保留原来的绿色圆点图标（根据是否匹配当前工作区）
             const currentWorkspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
             const isMatch = currentWorkspaceFolder && (skill.projectPath === currentWorkspaceFolder || skill.projectPath.startsWith(currentWorkspaceFolder + path.sep));
+            
+            const messages = getI18nMessages();
             
             // 根据是否匹配显示不同透明度的绿色圆点
             if (isMatch) {
@@ -34,26 +89,39 @@ export class SkillsTreeItem extends vscode.TreeItem {
             
             // 在 label 后面添加同步状态
             const statusLabels: Record<string, string> = {
-                'synced': '已同步',
-                'modified': '已修改',
-                'outdated': '待更新',
-                'new': '新建'
+                'synced': messages.synced,
+                'modified': messages.modified,
+                'outdated': messages.outdated,
+                'new': messages.new
             };
             
             const statusLabel = statusLabels[skill.syncStatus] || skill.syncStatus;
             this.label = `${skill.name} - ${statusLabel}`;
             
             // 显示技能介绍信息作为 tooltip
-            const description = skill.description || '暂无描述';
+            const description = skill.description || messages.noDescription;
             const absolutePath = skill.absolutePath || path.join(skill.projectPath, `${skill.name}.md`);
             
-            this.tooltip = `📝 ${description}
+            const locale = vscode.env.language;
+            const isZh = locale.startsWith('zh');
+            
+            if (isZh) {
+                this.tooltip = `📝 ${description}
 
 📂 路径: ${absolutePath}
 📦 版本: v${skill.version}
 🌍 全局版本: v${skill.globalVersion ?? '未同步'}
 📊 状态: ${statusLabel}
 ${skill.isGlobal ? '🌟 类型: 全局技能' : '🔹 类型: 本地技能'}`;
+            } else {
+                this.tooltip = `📝 ${description}
+
+📂 Path: ${absolutePath}
+📦 Version: v${skill.version}
+🌍 Global Version: v${skill.globalVersion ?? 'N/A'}
+📊 Status: ${statusLabel}
+${skill.isGlobal ? '🌟 Type: Global Skill' : '🔹 Type: Local Skill'}`;
+            }
             
             // 技能项不设置 command，只能通过箭头展开或查看详情
             this.command = undefined;
@@ -121,48 +189,77 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
 
     getChildren(element?: SkillsTreeItem): Thenable<SkillsTreeItem[]> {
         if (!element) {
-            // Root level - show all skills in a single list, deduplicate by name
+            // Root level - 分组显示全局技能和本地技能
             const skills = this.skillManager.getAllSkills();
+            const messages = getI18nMessages();
             
-            // 使用 Map 去重，相同 name 的技能只保留一个（优先保留全局技能）
-            const uniqueSkills = new Map<string, Skill>();
+            // 分离全局技能和本地技能
+            const globalSkills = skills.filter(skill => skill.isGlobal);
+            const localSkills = skills.filter(skill => !skill.isGlobal && !skill.isProjectLocal);
+            const projectLocalSkills = skills.filter(skill => skill.isProjectLocal);
             
-            skills.forEach(skill => {
-                if (!uniqueSkills.has(skill.name)) {
-                    uniqueSkills.set(skill.name, skill);
-                } else {
-                    const existing = uniqueSkills.get(skill.name);
-                    // 如果已有的是本地技能，新的是全局技能，则替换
-                    if (existing && !existing.isGlobal && skill.isGlobal) {
-                        uniqueSkills.set(skill.name, skill);
-                    }
-                }
-            });
-            
-            // 按是否全局技能排序：全局技能在前，本地技能在后
-            const sortedSkills = Array.from(uniqueSkills.values()).sort((a, b) => {
-                if (a.isGlobal && !b.isGlobal) return -1;
-                if (!a.isGlobal && b.isGlobal) return 1;
-                return 0;
-            });
-
             const items: SkillsTreeItem[] = [];
             
-            sortedSkills.forEach(skill => {
-                // 检查是否是全局技能且项目路径是子文件夹
-                if (skill.isGlobal && skill.absolutePath) {
+            // 添加全局技能分组
+            if (globalSkills.length > 0) {
+                const globalGroup = new SkillsTreeItem(
+                    messages.globalSkills,
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    undefined,
+                    'global-group'
+                );
+                globalGroup.description = `${globalSkills.length} ${messages.items}`;
+                items.push(globalGroup);
+            }
+            
+            // 添加本地技能分组
+            if (localSkills.length > 0) {
+                const localGroup = new SkillsTreeItem(
+                    messages.localSkills,
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    undefined,
+                    'local-group'
+                );
+                localGroup.description = `${localSkills.length} ${messages.items}`;
+                items.push(localGroup);
+            }
+            
+            // 添加项目本地技能分组
+            if (projectLocalSkills.length > 0) {
+                const projectGroup = new SkillsTreeItem(
+                    messages.projectSkills,
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    undefined,
+                    'project-group'
+                );
+                projectGroup.description = `${projectLocalSkills.length} ${messages.items}`;
+                items.push(projectGroup);
+            }
+            
+            // 如果没有任何技能，显示提示
+            if (items.length === 0) {
+                items.push(new SkillsTreeItem(
+                    messages.noSkills,
+                    vscode.TreeItemCollapsibleState.None,
+                    undefined,
+                    'empty-message'
+                ));
+            }
+            
+            return Promise.resolve(items);
+        } else if (element.id === 'global-group') {
+            // 显示全局技能
+            const skills = this.skillManager.getAllSkills().filter(skill => skill.isGlobal);
+            const items: SkillsTreeItem[] = [];
+            
+            skills.forEach(skill => {
+                if (skill.absolutePath) {
                     const globalSkillsDir = SkillsTreeDataProvider.getIflowGlobalSkillsPath();
                     const skillDir = path.dirname(skill.absolutePath);
-                    
-                    console.log(`[SkillsTreeProvider] 技能: ${skill.name}`);
-                    console.log(`[SkillsTreeProvider]   absolutePath: ${skill.absolutePath}`);
-                    console.log(`[SkillsTreeProvider]   skillDir: ${skillDir}`);
-                    console.log(`[SkillsTreeProvider]   globalSkillsDir: ${globalSkillsDir}`);
                     
                     // 判断 SKILL.md 的父目录是否就是全局技能根目录
                     if (skillDir === globalSkillsDir) {
                         // SKILL.md 在根目录，不可展开
-                        console.log(`[SkillsTreeProvider]   -> 在根目录，设置为不可展开`);
                         items.push(new SkillsTreeItem(
                             skill.name,
                             vscode.TreeItemCollapsibleState.None,
@@ -171,7 +268,6 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
                         ));
                     } else {
                         // SKILL.md 在子文件夹中，可展开
-                        console.log(`[SkillsTreeProvider]   -> 在子文件夹中，设置为可展开`);
                         items.push(new SkillsTreeItem(
                             skill.name,
                             vscode.TreeItemCollapsibleState.Collapsed,
@@ -180,7 +276,6 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
                         ));
                     }
                 } else {
-                    // 本地技能或没有 absolutePath
                     items.push(new SkillsTreeItem(
                         skill.name,
                         vscode.TreeItemCollapsibleState.None,
@@ -188,6 +283,36 @@ export class SkillsTreeDataProvider implements vscode.TreeDataProvider<SkillsTre
                         skill.id
                     ));
                 }
+            });
+            
+            return Promise.resolve(items);
+        } else if (element.id === 'local-group') {
+            // 显示本地技能
+            const skills = this.skillManager.getAllSkills().filter(skill => !skill.isGlobal && !skill.isProjectLocal);
+            const items: SkillsTreeItem[] = [];
+            
+            skills.forEach(skill => {
+                items.push(new SkillsTreeItem(
+                    skill.name,
+                    vscode.TreeItemCollapsibleState.None,
+                    skill,
+                    skill.id
+                ));
+            });
+            
+            return Promise.resolve(items);
+        } else if (element.id === 'project-group') {
+            // 显示项目本地技能
+            const skills = this.skillManager.getAllSkills().filter(skill => skill.isProjectLocal);
+            const items: SkillsTreeItem[] = [];
+            
+            skills.forEach(skill => {
+                items.push(new SkillsTreeItem(
+                    skill.name,
+                    vscode.TreeItemCollapsibleState.None,
+                    skill,
+                    skill.id
+                ));
             });
             
             return Promise.resolve(items);

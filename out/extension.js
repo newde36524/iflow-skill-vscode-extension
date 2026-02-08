@@ -42,8 +42,61 @@ const skillsTreeProvider_1 = require("./skillsTreeProvider");
 const skillWebviewProvider_1 = require("./skillWebviewProvider");
 const skillSearchProvider_1 = require("./skillSearchProvider");
 const skillManager_1 = require("./skillManager");
+function getI18nMessages() {
+    const locale = vscode.env.language;
+    const isZh = locale.startsWith('zh');
+    if (isZh) {
+        return {
+            refreshSuccess: "技能列表已刷新！",
+            clearSuccess: "技能列表已清空！",
+            notProjectLocalSkill: "这不是项目本地技能",
+            skillNotFound: "未找到技能！",
+            fileCreatedFailed: "创建文件失败",
+            folderCreatedFailed: "创建文件夹失败",
+            fileCopiedFailed: "复制文件失败",
+            fileDeletedFailed: "删除失败",
+            overwrite: "覆盖",
+            cancel: "取消",
+            confirmDelete: "删除",
+            importedToGlobal: (name) => `技能 "${name}" 已导入到全局！`,
+            importFailed: (error) => `导入失败: ${error}`,
+            skillDeleted: (name) => `技能 "${name}" 已删除！`,
+            deleteFailed: (name, error) => `删除技能 "${name}" 失败: ${error}`,
+            targetExists: (target) => `目标 "${target}" 已存在。是否覆盖？`,
+            fileCreated: (name) => `文件 "${name}" 已创建`,
+            folderCreated: (name) => `文件夹 "${name}" 已创建`,
+            fileCopied: (name) => `文件已复制为 "${name}"`,
+            fileDeleted: (type, name) => `${type} "${name}" 已删除`
+        };
+    }
+    else {
+        return {
+            refreshSuccess: "Skills refreshed successfully!",
+            clearSuccess: "Skills list cleared!",
+            notProjectLocalSkill: "This is not a project local skill",
+            skillNotFound: "Skill not found!",
+            fileCreatedFailed: "Failed to create file",
+            folderCreatedFailed: "Failed to create folder",
+            fileCopiedFailed: "Failed to copy file",
+            fileDeletedFailed: "Failed to delete",
+            overwrite: "Overwrite",
+            cancel: "Cancel",
+            confirmDelete: "Delete",
+            importedToGlobal: (name) => `Skill "${name}" has been imported to global!`,
+            importFailed: (error) => `Failed to import skill: ${error}`,
+            skillDeleted: (name) => `Skill "${name}" deleted!`,
+            deleteFailed: (name, error) => `Failed to delete skill "${name}": ${error}`,
+            targetExists: (target) => `The target "${target}" already exists. Do you want to overwrite it?`,
+            fileCreated: (name) => `File "${name}" created`,
+            folderCreated: (name) => `Folder "${name}" created`,
+            fileCopied: (name) => `File copied as "${name}"`,
+            fileDeleted: (type, name) => `${type} "${name}" deleted`
+        };
+    }
+}
 async function activate(context) {
     console.log("iFlow Extension is now active!");
+    const messages = getI18nMessages();
     const skillManager = new skillManager_1.SkillManager(context);
     const skillsTreeDataProvider = new skillsTreeProvider_1.SkillsTreeDataProvider(skillManager);
     const skillWebviewProvider = new skillWebviewProvider_1.SkillWebviewProvider(context.extensionUri, skillManager);
@@ -361,13 +414,13 @@ async function activate(context) {
         // 先清空列表再加载数据
         skillManager.reloadSkills();
         skillsTreeDataProvider.refresh();
-        vscode.window.showInformationMessage("Skills refreshed successfully!");
+        vscode.window.showInformationMessage(messages.refreshSuccess);
     });
     // Clear skills list command
     const clearSkillsCommand = vscode.commands.registerCommand("iflow.clearSkills", async () => {
         skillManager.clearSkills();
         skillsTreeDataProvider.refresh();
-        vscode.window.showInformationMessage("Skills list cleared!");
+        vscode.window.showInformationMessage(messages.clearSuccess);
     });
     // Edit skill command
     const editSkillCommand = vscode.commands.registerCommand("iflow.editSkill", async (skillItem) => {
@@ -427,6 +480,34 @@ async function activate(context) {
                 console.error("Failed to delete skill:", error);
                 vscode.window.showErrorMessage(`Failed to delete skill "${skill.name}": ${error instanceof Error ? error.message : "Unknown error"}`);
             }
+        }
+    });
+    // Import to global command
+    const importToGlobalCommand = vscode.commands.registerCommand("iflow.importToGlobal", async (skillItem) => {
+        const skill = skillManager.getSkill(skillItem.id);
+        if (!skill) {
+            return;
+        }
+        if (!skill.isProjectLocal) {
+            vscode.window.showWarningMessage(messages.notProjectLocalSkill);
+            return;
+        }
+        // 检查是否需要覆盖
+        const overwriteCheck = await skillManager.checkImportWillOverwrite(skill.id);
+        if (overwriteCheck && overwriteCheck.willOverwrite) {
+            // 需要覆盖，提示用户确认
+            const choice = await vscode.window.showWarningMessage(messages.targetExists(path.basename(overwriteCheck.targetPath)), { modal: true }, { title: messages.overwrite }, { title: messages.cancel, isCloseAffordance: true });
+            if (choice?.title !== messages.overwrite) {
+                return; // 用户取消
+            }
+        }
+        const result = await skillManager.importProjectSkillToGlobal(skill.id);
+        if (result.success) {
+            vscode.window.showInformationMessage(messages.importedToGlobal(skill.name));
+            skillsTreeDataProvider.refresh();
+        }
+        else {
+            vscode.window.showErrorMessage(messages.importFailed(result.error || "Unknown error"));
         }
     });
     // View skill detail command
@@ -1175,7 +1256,7 @@ async function activate(context) {
             vscode.window.showErrorMessage(`删除${itemType}失败: ${error instanceof Error ? error.message : "未知错误"}`);
         }
     });
-    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, openTerminalCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand, searchSkillsCommand, openFileCommand, createFileCommand, createFolderCommand, copyFileCommand, deleteFileCommand);
+    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, openTerminalCommand, deleteSkillCommand, importToGlobalCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand, searchSkillsCommand, openFileCommand, createFileCommand, createFolderCommand, copyFileCommand, deleteFileCommand);
     // 实时刷新 skill 列表（每10秒一次）
     const refreshInterval = setInterval(async () => {
         skillManager.reloadSkills();

@@ -16,6 +16,7 @@ export interface Skill {
   globalVersion?: number;
   syncStatus: "synced" | "modified" | "outdated" | "new";
   isGlobal?: boolean; // 标记是否为全局技能
+  isProjectLocal?: boolean; // 标记是否为项目本地技能
   rawData?: any; // 保存完整的 API 数据
   githubDescription?: string; // GitHub 技能的备注信息
   descriptionCn?: string; // data.json 中的中文描述
@@ -108,6 +109,89 @@ export class SkillManager {
 
     // 加载全局技能
     this.loadGlobalSkills();
+    
+    // 加载项目本地 .iflow 文件夹中的技能
+    this.loadProjectLocalSkills();
+  }
+  
+  // 加载项目本地 .iflow 文件夹中的技能
+  private loadProjectLocalSkills() {
+    // 获取当前工作区中的所有项目文件夹
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) {
+      return;
+    }
+
+    workspaceFolders.forEach((folder) => {
+      const projectPath = folder.uri.fsPath;
+      const iflowDir = path.join(projectPath, ".iflow");
+
+      if (!fs.existsSync(iflowDir)) {
+        return;
+      }
+
+      // 检查 .iflow 目录下的所有文件和文件夹
+      const items = fs.readdirSync(iflowDir, { withFileTypes: true });
+
+      items.forEach((item) => {
+        const skillId = `project-${this.hashString(iflowDir)}-${item.name}`;
+        
+        if (item.isFile() && item.name.toLowerCase() === "skill.md") {
+          // 单个 SKILL.md 文件
+          const skillFilePath = path.join(iflowDir, item.name);
+          this.loadProjectSkillFile(skillFilePath, projectPath, skillId, item.name.replace(".md", ""));
+        } else if (item.isDirectory()) {
+          // 文件夹，查找其中的 SKILL.md 或 skill.md
+          const skillDirPath = path.join(iflowDir, item.name);
+          let skillFilePath = path.join(skillDirPath, "SKILL.md");
+          
+          if (!fs.existsSync(skillFilePath)) {
+            skillFilePath = path.join(skillDirPath, "skill.md");
+          }
+
+          if (fs.existsSync(skillFilePath)) {
+            this.loadProjectSkillFile(skillFilePath, projectPath, skillId, item.name);
+          }
+        }
+      });
+    });
+  }
+
+  // 加载单个项目技能文件
+  private loadProjectSkillFile(
+    skillFilePath: string,
+    projectPath: string,
+    skillId: string,
+    skillName: string
+  ) {
+    try {
+      const content = fs.readFileSync(skillFilePath, "utf-8");
+      const stats = fs.statSync(skillFilePath);
+      const skillDir = path.dirname(skillFilePath);
+
+      // 读取 description
+      const description = content.substring(0, 200).split("\n")[0] || "Project local skill";
+
+      const skill: Skill = {
+        id: skillId,
+        name: skillName,
+        description: description,
+        content: content,
+        projectPath: projectPath,
+        absolutePath: skillFilePath,
+        createdAt: stats.birthtime.toISOString(),
+        updatedAt: stats.mtime.toISOString(),
+        version: 1,
+        syncStatus: "new",
+        isGlobal: false,
+        isProjectLocal: true, // 标记为项目本地技能
+      };
+
+      this.skills.set(skillId, skill);
+      console.log(`Loaded project local skill: ${skillName} from ${skillFilePath}`);
+    } catch (error) {
+      console.error(`Error loading project skill from ${skillFilePath}:`, error);
+    }
   }
 
   private loadGlobalSkills() {
@@ -742,6 +826,125 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
       console.error(`[importSkillToGlobal] Error importing skill:`, error);
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  // 检查导入是否需要覆盖现有文件
+  async checkImportWillOverwrite(skillId: string): Promise<{ willOverwrite: boolean; targetPath: string } | null> {
+    const skill = this.skills.get(skillId);
+    if (!skill || !skill.isProjectLocal) {
+      return null;
+    }
+
+    const globalSkillsDir = SkillManager.getIflowGlobalSkillsPath();
+    const sourcePath = skill.absolutePath!;
+    const isDirectory = fs.statSync(sourcePath).isDirectory();
+    const projectName = path.basename(skill.projectPath);
+
+    if (isDirectory) {
+      const targetDir = path.join(globalSkillsDir, `${projectName}-${skill.name}`);
+      return { willOverwrite: fs.existsSync(targetDir), targetPath: targetDir };
+    } else {
+      const iflowDir = path.join(skill.projectPath, ".iflow");
+      const isRootFile = path.dirname(sourcePath) === iflowDir;
+
+      if (isRootFile) {
+        const targetPath = path.join(globalSkillsDir, `${projectName}-SKILL.md`);
+        return { willOverwrite: fs.existsSync(targetPath), targetPath: targetPath };
+      } else {
+        const subDirName = path.basename(path.dirname(sourcePath));
+        const targetDir = path.join(globalSkillsDir, `${projectName}-${subDirName}`);
+        return { willOverwrite: fs.existsSync(targetDir), targetPath: targetDir };
+      }
+    }
+  }
+
+  // 将项目本地技能导入到全局（支持复制整个文件夹）
+  async importProjectSkillToGlobal(skillId: string): Promise<ImportResult> {
+    const skill = this.skills.get(skillId);
+    if (!skill) {
+      console.error(`[importProjectSkillToGlobal] Skill not found: ${skillId}`);
+      return { success: false, error: "Skill not found" };
+    }
+
+    if (!skill.isProjectLocal) {
+      return { success: false, error: "This is not a project local skill" };
+    }
+
+    try {
+      const globalSkillsDir = SkillManager.getIflowGlobalSkillsPath();
+      console.log(`[importProjectSkillToGlobal] Global skills directory: ${globalSkillsDir}`);
+
+      if (!fs.existsSync(globalSkillsDir)) {
+        fs.mkdirSync(globalSkillsDir, { recursive: true });
+      }
+
+      // 确定源路径（可能是单个文件或文件夹）
+      const sourcePath = skill.absolutePath!;
+      const isDirectory = fs.statSync(sourcePath).isDirectory();
+      
+      // 获取项目名称（从项目路径中提取）
+      const projectName = path.basename(skill.projectPath);
+      
+      let targetDir: string;
+      let targetFileName: string;
+      
+      if (isDirectory) {
+        // 如果是文件夹，使用命名规则：项目名称-文件夹名称
+        targetDir = path.join(globalSkillsDir, `${projectName}-${skill.name}`);
+        
+        // 如果目标已存在，先删除（覆盖）
+        if (fs.existsSync(targetDir)) {
+          console.log(`[importProjectSkillToGlobal] Overwriting existing directory: ${targetDir}`);
+          fs.rmSync(targetDir, { recursive: true, force: true });
+        }
+        
+        // 复制整个文件夹
+        await this.copyDirectory(sourcePath, targetDir);
+        console.log(`[importProjectSkillToGlobal] Copied directory: ${sourcePath} -> ${targetDir}`);
+      } else {
+        // 如果是单个文件，检查是否在 .iflow 根目录
+        const iflowDir = path.join(skill.projectPath, ".iflow");
+        const isRootFile = path.dirname(sourcePath) === iflowDir;
+        
+        if (isRootFile) {
+          // 在根目录的单个文件，使用命名规则：项目名称-SKILL.md
+          targetFileName = `${projectName}-SKILL.md`;
+          const targetPath = path.join(globalSkillsDir, targetFileName);
+          
+          // 如果目标已存在，直接覆盖
+          if (fs.existsSync(targetPath)) {
+            console.log(`[importProjectSkillToGlobal] Overwriting existing file: ${targetPath}`);
+          }
+          
+          await fs.promises.copyFile(sourcePath, targetPath);
+          console.log(`[importProjectSkillToGlobal] Copied file: ${sourcePath} -> ${targetPath}`);
+        } else {
+          // 在子文件夹中的文件，使用命名规则：项目名称-子文件夹名称
+          const subDirName = path.basename(path.dirname(sourcePath));
+          targetDir = path.join(globalSkillsDir, `${projectName}-${subDirName}`);
+          
+          // 如果目标已存在，先删除（覆盖）
+          if (fs.existsSync(targetDir)) {
+            console.log(`[importProjectSkillToGlobal] Overwriting existing directory: ${targetDir}`);
+            fs.rmSync(targetDir, { recursive: true, force: true });
+          }
+          
+          await this.copyDirectory(path.dirname(sourcePath), targetDir);
+          console.log(`[importProjectSkillToGlobal] Copied subdirectory: ${path.dirname(sourcePath)} -> ${targetDir}`);
+        }
+      }
+
+      // 重新加载全局技能
+      this.loadGlobalSkills();
+      
+      console.log(`[importProjectSkillToGlobal] Successfully imported skill: ${skill.name}`);
+      return { success: true };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      console.error(`[importProjectSkillToGlobal] Error importing skill:`, error);
       return { success: false, error: errorMessage };
     }
   }
