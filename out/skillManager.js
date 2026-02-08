@@ -335,19 +335,91 @@ class SkillManager {
     }
     async generateSkillContentUsingSkillCreator(name, description, projectPath, progressCallback) {
         const projectName = path.basename(projectPath);
-        // 使用 skill-creator 技能生成内容
+        // 检查是否是 git 仓库
+        const isGitRepo = fs.existsSync(path.join(projectPath, '.git'));
+        // 分析代码仓库
+        let codeAnalysis = "";
+        if (isGitRepo) {
+            if (progressCallback) {
+                progressCallback(`正在分析代码仓库...`);
+            }
+            try {
+                // 获取主要编程语言
+                const packageJsonPath = path.join(projectPath, 'package.json');
+                const requirementsPath = path.join(projectPath, 'requirements.txt');
+                const goModPath = path.join(projectPath, 'go.mod');
+                const cargoPath = path.join(projectPath, 'Cargo.toml');
+                const csprojPath = path.join(projectPath, '*.csproj');
+                let languages = [];
+                if (fs.existsSync(packageJsonPath))
+                    languages.push('JavaScript/TypeScript/Node.js');
+                if (fs.existsSync(requirementsPath))
+                    languages.push('Python');
+                if (fs.existsSync(goModPath))
+                    languages.push('Go');
+                if (fs.existsSync(cargoPath))
+                    languages.push('Rust');
+                if (fs.existsSync(csprojPath) || fs.existsSync(path.join(projectPath, 'Program.cs')))
+                    languages.push('C#/.NET');
+                // 分析项目结构
+                const srcDir = path.join(projectPath, 'src');
+                const hasSrc = fs.existsSync(srcDir);
+                // 获取主要文件
+                let mainFiles = [];
+                if (fs.existsSync(packageJsonPath)) {
+                    const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+                    mainFiles.push(`Main entry: ${pkg.main || pkg.type === 'module' ? pkg.files?.[0] : 'index.js'}`);
+                }
+                // 读取 README.md 获取项目信息
+                let readmeContent = "";
+                const readmePath = path.join(projectPath, 'README.md');
+                const readmeCnPath = path.join(projectPath, 'README.zh-CN.md');
+                if (fs.existsSync(readmeCnPath)) {
+                    readmeContent = fs.readFileSync(readmeCnPath, 'utf-8').substring(0, 500);
+                }
+                else if (fs.existsSync(readmePath)) {
+                    readmeContent = fs.readFileSync(readmePath, 'utf-8').substring(0, 500);
+                }
+                codeAnalysis = `
+=== Code Repository Analysis ===
+- Repository Type: Git Repository
+- Programming Languages: ${languages.join(', ') || 'Unknown'}
+- Has src directory: ${hasSrc ? 'Yes' : 'No'}
+- Main Files: ${mainFiles.join(', ') || 'Not detected'}
+- README Preview: ${readmeContent ? readmeContent.substring(0, 200) + '...' : 'No README found'}
+`;
+            }
+            catch (error) {
+                console.error("Error analyzing repository:", error);
+                codeAnalysis = "- Repository Analysis: Failed to analyze";
+            }
+        }
+        else {
+            codeAnalysis = "- Repository Type: Not a Git repository";
+        }
+        // 使用 skill-creator 技能生成内容，包含代码分析
         const skillCreatorPrompt = `Create a comprehensive skill definition for "${name}" with the following details:
 
 Description: ${description}
 Project Name: ${projectName}
 Project Path: ${projectPath}
 
+${codeAnalysis}
+
+Based on the code repository analysis above, create a skill that:
+1. Understands the project's architecture and tech stack
+2. Can assist with code navigation and understanding
+3. Knows the project's coding conventions and patterns
+4. Can help with common development tasks for this project
+5. Understands the project's dependencies and tools
+6. Can assist with debugging and testing
+
 Generate a complete skill markdown file that includes:
 1. A clear title and description
-2. When to use this skill
-3. Key capabilities and features
-4. Any specific tools or workflows it should handle
-5. Example use cases
+2. When to use this skill (specifically for this project)
+3. Key capabilities and features based on the codebase
+4. Specific tools, frameworks, and workflows it should handle
+5. Example use cases relevant to this project
 6. Any constraints or limitations
 
 Format the output as a markdown file ready to be used as an iFlow skill.`;
@@ -366,7 +438,7 @@ Format the output as a markdown file ready to be used as an iFlow skill.`;
                             progressCallback(`skill-creator 调用失败，使用默认模板...`);
                         }
                         // 如果 skill-creator 调用失败，回退到默认模板
-                        resolve(this.generateDefaultTemplate(name, description, projectPath));
+                        resolve(this.generateDefaultTemplate(name, description, projectPath, isGitRepo));
                     }
                     else if (stdout && stdout.trim()) {
                         if (progressCallback) {
@@ -379,7 +451,7 @@ Format the output as a markdown file ready to be used as an iFlow skill.`;
                         if (progressCallback) {
                             progressCallback(`skill-creator 无输出，使用默认模板...`);
                         }
-                        resolve(this.generateDefaultTemplate(name, description, projectPath));
+                        resolve(this.generateDefaultTemplate(name, description, projectPath, isGitRepo));
                     }
                 });
             });
@@ -389,11 +461,19 @@ Format the output as a markdown file ready to be used as an iFlow skill.`;
             if (progressCallback) {
                 progressCallback(`skill-creator 执行失败，使用默认模板...`);
             }
-            return this.generateDefaultTemplate(name, description, projectPath);
+            return this.generateDefaultTemplate(name, description, projectPath, isGitRepo);
         }
     }
-    generateDefaultTemplate(name, description, projectPath) {
+    generateDefaultTemplate(name, description, projectPath, isGitRepo = false) {
         const projectName = path.basename(projectPath);
+        let repoInfo = "";
+        if (isGitRepo) {
+            repoInfo = `
+
+## Repository Information
+- **Type**: Git Repository
+- **Detected**: This is a version-controlled project`;
+        }
         return `# ${name}
 
 ## Description
@@ -401,10 +481,15 @@ ${description}
 
 ## Project
 - **Project Name**: ${projectName}
-- **Project Path**: \`${projectPath}\`
+- **Project Path**: \`${projectPath}\`${repoInfo}
 
 ## Usage
 This skill provides specialized knowledge and workflows for the ${projectName} project.
+
+## When to Use
+- When you need to understand the project structure
+- When working with ${projectName} codebase
+- When you need context about the project's architecture
 
 ## Key Features
 <!-- Add your key features here -->
@@ -416,15 +501,22 @@ This skill provides specialized knowledge and workflows for the ${projectName} p
 <!-- Add detailed documentation here using Markdown formatting -->
 `;
     }
-    // 保存技能到项目本地的 .iflow 文件夹（根目录 SKILL.md）
+    // 保存技能到项目本地的 .iflow 文件夹
     async saveSkillToProjectLocal(skill) {
         try {
             const iflowDir = path.join(skill.projectPath, ".iflow");
             if (!fs.existsSync(iflowDir)) {
                 fs.mkdirSync(iflowDir, { recursive: true });
             }
-            // 保存到 .iflow/SKILL.md
-            const skillFilePath = path.join(iflowDir, "SKILL.md");
+            // 生成文件名，避免覆盖同名文件
+            let skillFileName = "SKILL.md";
+            let counter = 1;
+            while (fs.existsSync(path.join(iflowDir, skillFileName))) {
+                // 如果文件已存在，添加编号
+                skillFileName = `SKILL-${counter}.md`;
+                counter++;
+            }
+            const skillFilePath = path.join(iflowDir, skillFileName);
             const contentWithVersion = this.addVersionToContent(skill.content, skill.version);
             await fs.promises.writeFile(skillFilePath, contentWithVersion, "utf-8");
             // 设置 absolutePath 用于识别

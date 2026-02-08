@@ -257,25 +257,50 @@ class SkillsTreeDataProvider {
             const skills = this.skillManager.getAllSkills().filter(skill => skill.isProjectLocal);
             const items = [];
             skills.forEach(skill => {
-                items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.None, skill, skill.id));
+                if (skill.absolutePath) {
+                    const skillDir = path.dirname(skill.absolutePath);
+                    const iflowDir = path.join(skill.projectPath, '.iflow');
+                    // 判断 SKILL.md 文件是否在 .iflow 根目录
+                    if (skillDir === iflowDir) {
+                        // SKILL.md 在 .iflow 根目录，不可展开
+                        items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.None, skill, skill.id));
+                    }
+                    else {
+                        // SKILL.md 在子文件夹中，可展开
+                        items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.Collapsed, skill, skill.id));
+                    }
+                }
+                else {
+                    items.push(new SkillsTreeItem(skill.name, vscode.TreeItemCollapsibleState.None, skill, skill.id));
+                }
             });
             return Promise.resolve(items);
         }
-        else if (element.skill && element.skill.projectPath) {
-            // 展开技能子文件夹
-            return this.getSkillFolderContents(element.skill.projectPath);
+        else if (element.skill && element.skill.absolutePath) {
+            // 展开技能子文件夹（只显示技能文件所在目录的内容）
+            const skillDir = path.dirname(element.skill.absolutePath);
+            return this.getSkillFolderContents(skillDir, element.skill);
         }
         else if (element.filePath && !element.isFile) {
-            // 展开子文件夹
-            return this.getSkillFolderContents(element.filePath);
+            // 展开技能子文件夹
+            return this.getSkillFolderContents(element.filePath, element.skill);
         }
         return Promise.resolve([]);
     }
-    getSkillFolderContents(folderPath) {
+    getSkillFolderContents(folderPath, skill) {
         const fs = require('fs');
         const items = [];
         if (!fs.existsSync(folderPath)) {
             return Promise.resolve([]);
+        }
+        // 如果提供了 skill，检查 folderPath 是否在技能文件夹范围内
+        if (skill && skill.absolutePath) {
+            const skillRootDir = path.dirname(skill.absolutePath);
+            const iflowDir = path.join(skill.projectPath, '.iflow');
+            // 只显示技能文件夹内的内容，不允许超出范围
+            if (!folderPath.startsWith(skillRootDir) && !folderPath.startsWith(iflowDir)) {
+                return Promise.resolve([]);
+            }
         }
         const entries = fs.readdirSync(folderPath, { withFileTypes: true });
         entries.forEach((entry) => {
