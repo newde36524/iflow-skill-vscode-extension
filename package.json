@@ -4,7 +4,7 @@
   "icon": "logo.png",
   "displayName": "iFlow Skill Manager",
   "description": "Manage iFlow skills for your projects",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "engines": {
     "vscode": "^1.96.0"
   },
@@ -41,16 +41,6 @@
         "command": "iflow.openTerminal",
         "title": "Open iFlow Terminal",
         "icon": "$(terminal)"
-      },
-      {
-        "command": "iflow.checkSyncStatus",
-        "title": "Check Sync Status",
-        "icon": "$(sync)"
-      },
-      {
-        "command": "iflow.syncFromGlobal",
-        "title": "Sync from Global",
-        "icon": "$(cloud-download)"
       },
       {
         "command": "iflow.viewSkillDetail",
@@ -179,19 +169,9 @@
       ],
       "view/item/context": [
         {
-          "command": "iflow.checkSyncStatus",
-          "when": "view == iflowSkillsView && viewItem == skill",
-          "group": "management@1"
-        },
-        {
-          "command": "iflow.syncFromGlobal",
-          "when": "view == iflowSkillsView && viewItem == skill",
-          "group": "management@2"
-        },
-        {
           "command": "iflow.viewSkillDetail",
           "when": "view == iflowSkillsView && viewItem == skill",
-          "group": "management@3"
+          "group": "management@1"
         },
         {
           "command": "iflow.editSkill",

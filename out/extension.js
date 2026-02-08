@@ -52,12 +52,6 @@ async function activate(context) {
     skillWebviewProvider.setOnSkillChanged(() => {
         skillsTreeDataProvider.refresh();
     });
-    // 初始化时检查所有skill的同步状态
-    const skills = skillManager.getAllSkills();
-    for (const skill of skills) {
-        await skillManager.checkGlobalSkillSyncStatus(skill.id);
-    }
-    skillsTreeDataProvider.refresh();
     // Register tree view
     const treeView = vscode.window.createTreeView("iflowSkillsView", {
         treeDataProvider: skillsTreeDataProvider,
@@ -374,35 +368,6 @@ async function activate(context) {
         skillManager.clearSkills();
         skillsTreeDataProvider.refresh();
         vscode.window.showInformationMessage("Skills list cleared!");
-    });
-    // Check sync status command
-    const checkSyncStatusCommand = vscode.commands.registerCommand("iflow.checkSyncStatus", async (skillItem) => {
-        await skillManager.checkGlobalSkillSyncStatus(skillItem.id);
-        skillsTreeDataProvider.refresh();
-    });
-    // Sync from global command
-    const syncFromGlobalCommand = vscode.commands.registerCommand("iflow.syncFromGlobal", async (skillItem) => {
-        const skill = skillManager.getSkill(skillItem.id);
-        if (skill) {
-            const globalSkillInfo = await skillManager.readGlobalSkill(skill.name);
-            if (globalSkillInfo.exists && globalSkillInfo.content) {
-                // 更新skill内容
-                skill.content = globalSkillInfo.content;
-                skill.globalVersion = globalSkillInfo.version;
-                skill.syncStatus = "synced";
-                skill.updatedAt = new Date().toISOString();
-                await skillManager.updateSkill(skill);
-                // 由于updateSkill会递增版本，需要重置
-                skill.version = skill.version - 1;
-                skill.syncStatus = "synced";
-                await skillManager.saveSkillToFilePublic(skill);
-                skillsTreeDataProvider.refresh();
-                vscode.window.showInformationMessage(`Skill "${skill.name}" 已从全局同步！`);
-            }
-            else {
-                vscode.window.showWarningMessage(`全局skill "${skill.name}" 不存在！`);
-            }
-        }
     });
     // Edit skill command
     const editSkillCommand = vscode.commands.registerCommand("iflow.editSkill", async (skillItem) => {
@@ -1210,7 +1175,7 @@ async function activate(context) {
             vscode.window.showErrorMessage(`删除${itemType}失败: ${error instanceof Error ? error.message : "未知错误"}`);
         }
     });
-    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, openTerminalCommand, checkSyncStatusCommand, syncFromGlobalCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand, searchSkillsCommand, openFileCommand, createFileCommand, createFolderCommand, copyFileCommand, deleteFileCommand);
+    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, openTerminalCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand, searchSkillsCommand, openFileCommand, createFileCommand, createFolderCommand, copyFileCommand, deleteFileCommand);
     // 实时刷新 skill 列表（每10秒一次）
     const refreshInterval = setInterval(async () => {
         skillManager.reloadSkills();
