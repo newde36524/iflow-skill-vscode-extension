@@ -415,16 +415,6 @@ async function activate(context) {
             skillWebviewProvider.showSkillEditor(skill);
         }
     });
-    // Save skill command
-    const saveSkillCommand = vscode.commands.registerCommand("iflow.saveSkill", async (skillItem) => {
-        const result = await skillManager.importSkillToGlobal(skillItem.id);
-        if (result.success) {
-            vscode.window.showInformationMessage(`Skill "${skillItem.label}" imported to global iFlow!`);
-        }
-        else {
-            vscode.window.showErrorMessage(`Failed to import skill: ${result.error}`);
-        }
-    });
     // Delete skill command
     const deleteSkillCommand = vscode.commands.registerCommand("iflow.deleteSkill", async (skillItem) => {
         const skill = skillManager.getSkill(skillItem.id);
@@ -1083,7 +1073,7 @@ async function activate(context) {
             vscode.window.showErrorMessage(`打开文件失败: ${error instanceof Error ? error.message : "未知错误"}`);
         }
     });
-    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, openTerminalCommand, checkSyncStatusCommand, syncFromGlobalCommand, saveSkillCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand, searchSkillsCommand, openFileCommand);
+    context.subscriptions.push(treeView, generateSkillCommand, refreshSkillsCommand, clearSkillsCommand, openTerminalCommand, checkSyncStatusCommand, syncFromGlobalCommand, deleteSkillCommand, openSkillEditorCommand, showAllSkillsCommand, viewSkillDetailCommand, openTerminalCommand, installIflowCommand, searchSkillsCommand, openFileCommand);
     // 实时刷新 skill 列表（每10秒一次）
     const refreshInterval = setInterval(async () => {
         skillManager.reloadSkills();

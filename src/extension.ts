@@ -461,23 +461,6 @@ export async function activate(context: vscode.ExtensionContext) {
     },
   );
 
-  // Save skill command
-  const saveSkillCommand = vscode.commands.registerCommand(
-    "iflow.saveSkill",
-    async (skillItem) => {
-      const result = await skillManager.importSkillToGlobal(skillItem.id);
-      if (result.success) {
-        vscode.window.showInformationMessage(
-          `Skill "${skillItem.label}" imported to global iFlow!`,
-        );
-      } else {
-        vscode.window.showErrorMessage(
-          `Failed to import skill: ${result.error}`,
-        );
-      }
-    },
-  );
-
   // Delete skill command
   const deleteSkillCommand = vscode.commands.registerCommand(
     "iflow.deleteSkill",
@@ -1244,7 +1227,6 @@ export async function activate(context: vscode.ExtensionContext) {
     openTerminalCommand,
     checkSyncStatusCommand,
     syncFromGlobalCommand,
-    saveSkillCommand,
     deleteSkillCommand,
     openSkillEditorCommand,
     showAllSkillsCommand,
