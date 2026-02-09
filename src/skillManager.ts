@@ -60,10 +60,7 @@ export class SkillManager {
 
   constructor(private context: vscode.ExtensionContext) {
     this.skillsPath = path.join(context.globalStorageUri.fsPath, "skills");
-    this.globalSkillsPath = path.join(
-      context.globalStorageUri.fsPath,
-      "global-skills",
-    );
+    this.globalSkillsPath = SkillManager.getIflowGlobalSkillsPath();
     this.ensureDirectoriesExist();
     this.loadSkills();
   }

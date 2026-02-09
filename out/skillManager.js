@@ -65,7 +65,7 @@ class SkillManager {
         this.context = context;
         this.skills = new Map();
         this.skillsPath = path.join(context.globalStorageUri.fsPath, "skills");
-        this.globalSkillsPath = path.join(context.globalStorageUri.fsPath, "global-skills");
+        this.globalSkillsPath = SkillManager.getIflowGlobalSkillsPath();
         this.ensureDirectoriesExist();
         this.loadSkills();
     }
